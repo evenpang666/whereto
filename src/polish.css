@@ -1,0 +1,58 @@
+/* Keep the country visible in the first desktop viewport. */
+@media (min-width: 851px) {
+  .site-header {
+    height: 82px;
+  }
+  .intro {
+    padding-top: 32px;
+    padding-bottom: 27px;
+  }
+  .map-canvas {
+    aspect-ratio: auto;
+    height: clamp(330px, calc(100dvh - 430px), 520px);
+    min-height: 0;
+  }
+  .map-canvas > svg {
+    height: 100%;
+    width: 100%;
+  }
+  .province-label {
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+}
+.detail-intro {
+  font-size: 13px;
+}
+.detail-sections p {
+  font-size: 12px;
+  color: #7c7567;
+}
+.detail-sections h3 {
+  font-size: 13px;
+}
+.feature-card-body > p {
+  font-size: 12px;
+  color: #837b6c;
+}
+.fine-print {
+  color: #857e6c;
+}
+.source-links {
+  color: #6d7e58;
+}
+.intro p,
+.discovery-copy {
+  color: #8b8373;
+}
+.privacy-note small {
+  color: #7b886b;
+}
+@media (max-width: 560px) {
+  .detail-sections p {
+    font-size: 12px;
+  }
+  .feature-card-body > p {
+    font-size: 12px;
+  }
+}

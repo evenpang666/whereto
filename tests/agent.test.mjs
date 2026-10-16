@@ -1,0 +1,101 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { once } from "node:events";
+import { Context } from "@deepseek-ai/cordis";
+import * as plugin from "../dsh/index.mjs";
+import { createDshAgentBackend, parseAgentJson, sessionEvidence } from "../server/dsh-agent.mjs";
+import { generateDetail, validateDetail, detailFromTask } from "../server/harness.mjs";
+import { createApp } from "../server/index.mjs";
+import { root, place, full, url, excerpt, headers, temp, cleanup, mockHost } from "./helpers.mjs";
+
+test("whole-project plugin declares DSH host dependencies and mounts its UI with lifecycle cleanup", async () => {
+  const dir = await temp(), ctx = new Context(), host = mockHost(); const tools = [], skills = [];
+  for (const [key, value] of Object.entries(host.ctx)) if (!["on", "get"].includes(key)) ctx.provide(key, value);
+  ctx.provide("tools", { register: value => tools.push(value) }); ctx.provide("skills", { register: value => skills.push(value) }); ctx.provide("webServer", { port: 3080 });
+  try {
+    const fiber = await ctx.plugin(plugin, { port: 0, lan: false, dataDir: dir }).await();
+    const app = ctx.get("whereto");
+    assert.equal((await (await fetch(`http://127.0.0.1:${app.port}/api/health`)).json()).engine, "dsh-agent");
+    assert.ok(tools.some(t => t.name === "whereto_read_place")); assert.ok(skills.some(s => s.name === "whereto-travel-guide"));
+    await fiber.dispose(); assert.equal(app.server.listening, false);
+  } finally { await ctx.fiber.dispose(); await cleanup(dir); }
+});
+test("generation creates DSH Web sessions without allocating tokens or supplying a model/client", async () => {
+  const host = mockHost(), ledger = [], updates = [];
+  const result = await generateDetail({ place, config: {}, agentBackend: createDshAgentBackend(host.ctx, { root }), onUsage: u => ledger.push(u), onProgress: u => updates.push(u) });
+  assert.deepEqual(host.creates, [{ cwd: root }]); assert.equal(host.selections.length, 0);
+  assert.equal(host.requests[0].mode, "queue"); assert.match(host.requests[0].content[0].text, /site:xiaohongshu.com/);
+  assert.equal(result.schemaVersion, 4); assert.equal(result.agent.model, "host-model"); assert.equal(result.realReviews[0].excerpt, excerpt);
+  assert.equal(ledger.length, 1); assert.equal(ledger[0].cost, null); assert.ok(updates.some(p => p.message.includes("web_search")));
+  assert.equal(host.listeners.size, 0); assert.equal(result.usage.input, 100);
+});
+test("reference-session model and preset are inherited without prompting or editing the reference session", async () => {
+  const host = mockHost({ source: { meta: { agentPreset: "my-preset" }, events: [{ type: "model/selection", data: { provider: "custom", model: "my-model", reasoningEffort: "high" } }] } });
+  await createDshAgentBackend(host.ctx, { root }).run({ title: "test", prompt: "JSON", config: { sourceSessionId: "session-source" } });
+  assert.equal(host.creates[0].agentPreset, "my-preset"); assert.equal(host.selections[0].model, "my-model");
+  assert.notEqual(host.requests[0].sessionId, "session-source");
+});
+test("model output cannot invent evaluation sources, and free text is not mined for URLs", () => {
+  const research = sessionEvidence([{ type: "assistant/message", data: { message: { content: [{ type: "text", text: `source ${url}` }] } } }]);
+  assert.equal(research.sources.length, 0); assert.throws(() => validateDetail(full, research), /真实评价/);
+  assert.deepEqual(parseAgentJson('```json\n{"ok":true}\n```'), { ok: true }); assert.throws(() => parseAgentJson("prefix {}"), /JSON/);
+  assert.deepEqual(parseAgentJson('检索完成。\n```json\n{"ok":true}\n```\n结束。'), { ok: true });
+  assert.throws(() => parseAgentJson('```json\n{"a":1}\n```\n```json\n{"a":2}\n```'), /JSON/);
+});
+test("completed scene results can be recovered without another prompt and cannot be imported into another scene", async () => {
+  const host = mockHost(), backend = createDshAgentBackend(host.ctx, { root });
+  const result = await generateDetail({ place, config: {}, agentBackend: backend });
+  const task = await backend.readResult({ sessionId: result.agent.sessionId, placeId: place.id });
+  assert.deepEqual(task.value, full); assert.equal(host.requests.length, 1);
+  await assert.rejects(backend.readResult({ sessionId: result.agent.sessionId, placeId: "another-place" }), /当前景点/);
+  const status = await backend.describe({ sourceSessionId: "bad-id" }); assert.ok(status.sourceError);
+});
+
+test("page excerpts must match fetched tool text and full page bodies never enter card caches", () => {
+  const events = [{ type: "tool/result", data: { meta: { sources: [{ url, title: "游客亲历" }] }, message: { content: [] } } },
+    { type: "tool/result", data: { meta: { url, statusCode: 200 }, message: { content: [
+      { type: "tool-result", content: [{ type: "text", text: `页面标题\n${excerpt}\n更多内容` }] }] } } }];
+  const research = sessionEvidence(events);
+  const value = { ...full, reviewExcerpts: { [url]: excerpt } };
+  const detail = detailFromTask(place, { value, research, agent: { model: "host-model" } });
+  assert.equal(detail.realReviews[0].excerpt, excerpt);
+  assert.ok(!JSON.stringify(detail).includes("verificationText"));
+  assert.ok(!JSON.stringify(detail).includes("更多内容"));
+  assert.throws(() => validateDetail({ ...value, reviewExcerpts: { [url]: "这是一段模型杜撰、没有在网页出现过的评价。" } }, research), /原文不一致/);
+  assert.equal(validateDetail(full, research).realReviews.length, 0);
+  assert.equal(detailFromTask(place, { value: full, research, agent: {} }).research.omittedReviews, 1);
+});
+test("failed and blocked DSH turns retain usage and do not retry or cache an answer", async () => {
+  for (const options of [{ fail: true }, { blocked: true }]) {
+    const host = mockHost(options), ledger = [];
+    await assert.rejects(generateDetail({ place, config: {}, agentBackend: createDshAgentBackend(host.ctx, { root }), onUsage: u => ledger.push(u) }), /DSH/);
+    assert.equal(ledger.length, 1); assert.equal(host.requests.length, 1); assert.equal(host.listeners.size, 0);
+  }
+});
+test("cancellation reaches the DSH session, cleans listeners and preserves the original session", async () => {
+  let release; const wait = new Promise(resolve => { release = resolve; });
+  const host = mockHost({ wait }), controller = new AbortController(); let started;
+  const ready = new Promise(resolve => { started = resolve; });
+  const task = createDshAgentBackend(host.ctx, { root }).run({ title: "cancel", prompt: "JSON", config: {}, signal: controller.signal,
+    onProgress: () => started() });
+  const rejection = assert.rejects(task, /取消|超时/);
+  await ready; await new Promise(resolve => setImmediate(resolve)); controller.abort(); await rejection;
+  assert.equal(host.cancelled, 1); assert.equal(host.listeners.size, 0); assert.equal(host.sessions.size, 1); release();
+});
+test("API upgrades old caches through DSH, persists usage, reuses new caches and preserves results on refresh failure", async () => {
+  const dir = await temp(), host = mockHost();
+  const backend = createDshAgentBackend(host.ctx, { root });
+  const { server, store } = await createApp({ dataDir: dir, lan: null, agentBackend: backend });
+  await store.update("details", {}, () => ({ [place.id]: { schemaVersion: 3, intro: "old" } }));
+  server.listen(0, "127.0.0.1"); await once(server, "listening"); const base = `http://127.0.0.1:${server.address().port}`;
+  const post = body => fetch(base + `/api/places/${place.id}/generate`, { method: "POST", headers, body: JSON.stringify(body) });
+  try {
+    const firstResponse = await post({}); assert.equal(firstResponse.status, 200); const first = await firstResponse.json();
+    assert.equal(first.detail.schemaVersion, 4); assert.equal(first.detail.kind, "dsh-agent");
+    assert.equal((await (await post({})).json()).cached, true); assert.equal(host.requests.length, 1);
+    backend.run = async () => { throw Error("DSH failed"); };
+    assert.equal((await post({ refresh: true })).status, 400);
+    assert.deepEqual((await (await fetch(base + `/api/places/${place.id}`)).json()).detail, first.detail);
+    assert.equal((await store.read("usage", [])).length, 1);
+  } finally { await new Promise(resolve => server.close(resolve)); await cleanup(dir); }
+});

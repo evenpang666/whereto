@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="420" viewBox="0 0 1440 420" role="img" aria-label="漫游whereto">
+  <rect width="1440" height="420" rx="32" fill="#f7f3e9"/>
+  <path d="M1120 0C976 65 1055 230 1260 272S1510 144 1440 0" fill="#ead8c1"/>
+  <path d="M0 310C120 197 305 264 332 420H0" fill="#dfe3d4"/>
+  <rect x="284" y="143" width="134" height="134" rx="44" fill="#75836a"/>
+  <path d="m315 230 25-38 17 25 10-15 19 28" fill="none" stroke="#faf7ee" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="374" cy="185" r="8" fill="#e5c5a1"/>
+  <text x="465" y="249" font-family="Noto Serif SC,Source Han Serif SC,SimSun,serif" font-size="98" font-weight="700" fill="#604638">漫游</text>
+  <text x="704" y="245" font-family="Georgia,serif" font-size="83" fill="#879674">whereto</text>
+</svg>

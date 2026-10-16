@@ -1,0 +1,42 @@
+.lan-address { margin: -7px 0 25px; font-size: 11px; color: #8b8274; text-align: center; line-height: 1.8; }
+.lan-address a { text-decoration: underline; text-underline-offset: 3px; }
+.lan-address span { font-size: 10px; }
+.visited-entry { display: flex; gap: 10px; align-items: center; width: 100%; padding: 11px 13px; margin: 0 0 19px; background: #eeeee4; color: #727b64; border: 1px solid #dfe2d4; border-radius: 12px; font-size: 12px; transition: background .25s, transform .25s; }
+.visited-entry span { flex: 1; text-align: left; }
+.visited-entry:hover { background: #e3e7da; transform: translateY(-2px); }
+.marked-point { color: #b57960; cursor: pointer; transition: transform .65s cubic-bezier(.22,.68,.23,1), color .3s; }
+.marked-point .record-halo { fill: #fffaf1; stroke: currentColor; stroke-width: 1.2; }
+.marked-point:hover .record-halo, .marked-point:focus .record-halo { stroke-width: 3; }
+.marked-point text { fill: #685b4b; font-size: 11px; paint-order: stroke; stroke: #fbf8ef; stroke-width: 4px; }
+.marked-point.is-visited { color: #999992; }
+.marked-point.is-visited .record-halo { fill: #eeeee8; }
+.visited-dot { fill: #7d7d75; stroke: #fff; stroke-width: 1; }
+.edge-pin .record-halo { stroke-dasharray: 3 2; }
+.is-visited :is(.feature-image img,.detail-visual img,.inspiration-image img), .is-visited.scope-card img, .collection-list .is-visited img, .visited-list .is-visited img { filter: grayscale(1); opacity: .62; transition: filter .4s, opacity .4s; }
+.is-visited :is(h2,h3,.detail-intro), .is-visited.scope-card strong, .collection-list .is-visited strong, .visited-list .is-visited strong { color: #898980; }
+.visited-badge { display: inline-flex; align-items: center; gap: 5px; color: #818177; background: #eeeee7; padding: 4px 8px; border-radius: 6px; font-size: 11px; margin-bottom: 10px; }
+.feature-card.is-visited, .scope-card.is-visited, .inspiration-card.is-visited, .dialog.is-visited .detail-content { background: #f2f1eb; border-color: #ddddd4; }
+.detail-actions { flex-wrap: wrap; }
+.settings-fields { display: contents; border: 0; padding: 0; margin: 0; }
+.settings-fields:disabled input, .settings-fields:disabled select { opacity: .65; }
+.visited-import { background: #f2f2e9; border: 1px solid #e4e4d8; border-radius: 15px; padding: 18px; margin: 20px 0; }
+.visited-import label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.visited-import textarea { resize: vertical; min-height: 110px; width: 100%; border: 1px solid #dcded1; background: #fffdf7; color: #655548; padding: 12px; border-radius: 9px; font: inherit; font-size: 12px; line-height: 1.8; }
+.visited-import textarea:focus { outline: 2px solid #a7b08e; outline-offset: 2px; }
+.visited-import .fine-print { margin: 9px 0; line-height: 1.8; }
+.match-report { padding: 15px; background: #f5efe3; border-radius: 12px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.visited-list-title { font-size: 15px; margin: 24px 0 14px; }
+.visited-list-title small { color: #92977c; font-weight: 400; margin-left: 5px; }
+.visited-list { display: grid; gap: 10px; }
+.visited-list article { display: flex; align-items: center; border-bottom: 1px solid #eae7de; padding: 9px 0; gap: 10px; }
+.visited-card-open { display: flex; align-items: center; gap: 12px; flex: 1; text-align: left; min-width: 0; }
+.visited-card-open img { width: 68px; height: 64px; border-radius: 9px; object-fit: cover; }
+.visited-card-open > span { display: grid; gap: 5px; min-width: 0; }
+.visited-card-open strong { font-size: 13px; line-height: 1.5; }
+.visited-card-open small { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #96917e; }
+.visited-toggle { display: grid; justify-items: center; gap: 5px; padding: 9px 0; color: #88887b; font-size: 10px; white-space: nowrap; }
+.visited-toggle:hover { color: #645747; }
+.visited-empty { color: #97917e; font-size: 12px; line-height: 1.8; padding: 16px 0; }
+.search-results .visited-search-result { color: #92928a; }
+@media (max-width: 600px) { .lan-address { padding: 0 15px; font-size: 10px; } .visited-import { padding: 13px; } .visited-card-open img { width: 52px; height: 58px; } .visited-toggle { font-size: 9px; } .site-header nav button:nth-child(3) { display: none; } .site-header nav button:last-child { display: flex; } }
+@media (prefers-reduced-motion: reduce) { .marked-point, .visited-entry { transition: none; } }

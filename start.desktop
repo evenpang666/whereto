@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=漫游whereto
+Comment=在本地展开你的中国旅行地图
+Exec=sh -c "cd \"\\$(dirname \"\\$1\")\" && bash start.sh" sh %k
+Terminal=true
+Categories=Education;Geography;
+Icon=applications-internet
