@@ -1,6 +1,7 @@
 {
   "name": "dsh-whereto",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "main": "./dsh/index.mjs",
   "exports": {

@@ -73,3 +73,7 @@
 [架构与存储](docs/architecture.md) · [数据来源与边界](docs/data-sources.md) · [素材与许可](docs/credits.md) · [验证记录](docs/verification.md)
 
 <sub>部分景点使用城市参考坐标或 AI 印象配图，卡片均有标注。AI 生成用量由 DSH 与模型服务商计费，浏览缓存不再次调用模型。</sub>
+
+## 许可证
+
+项目代码与项目原创文档采用 [MIT License](LICENSE)。第三方地图、景点数据、照片及其他媒体保留原有许可与权利，详见[素材与许可](docs/credits.md)及各条目署名。
