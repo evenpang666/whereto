@@ -1,15 +1,22 @@
+import { listenIndependent, closeIndependent } from "../server/independent-http.mjs";
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { registerBrowserLaunch } from "../scripts/browser-launch.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "../server/index.mjs";
 import { createDshAgentBackend } from "../server/dsh-agent.mjs";
 
 export const name = "whereto";
-export const inject = ["sessionController", "sessions", "tools", "skills", "agentDefaultModel", "agentPresets", "webServer"];
+export const inject = ["sessionController", "sessions", "tools", "skills", "agentDefaultModel", "agentPresets", "webServer", "connection"];
 export async function apply(ctx, config = {}) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const basePath = "/whereto", instanceId = randomUUID();
   const agentBackend = createDshAgentBackend(ctx, { root });
-  const app = await createApp({ agentBackend, dataDir: config.dataDir ? path.resolve(config.dataDir) : path.join(root, ".local"), ...(config.lan === false ? { lan: null } : {}) });
+  const independent = {};
+  const app = await createApp({ independent, agentBackend, basePath, instanceId, connection: ctx.connection, webServer: ctx.webServer, dataDir: config.dataDir ? path.resolve(config.dataDir) : path.join(root, ".local"), ...(config.lan === false ? { lan: null } : {}) });
+  ctx.effect(() => async () => { app.cancelGeneration(); await closeIndependent(app.server); agentBackend.dispose(); });
+  independent.port = await listenIndependent(app.server, config.port ?? process.env.WHERETO_PORT ?? 3101);
   const catalog = JSON.parse(await fs.readFile(path.join(root, "public/data/catalog.json"), "utf8"));
   const output = { schema: { type: "object" }, render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }] };
   ctx.tools.register({ name: "whereto_read_place", description: "读取漫游地图中指定景点的本地资料与来源，不修改收藏或去过状态。",
@@ -20,14 +27,13 @@ export async function apply(ctx, config = {}) {
     const content = await fs.readFile(path.join(root, "skills", folder, "SKILL.md"), "utf8");
     ctx.skills.register({ name: skillName, description, content, source: "bundled" });
   }
-  const port = Number(config.port ?? process.env.WHERETO_PORT ?? 3789);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) throw Error("漫游端口无效。");
-  await new Promise((resolve, reject) => { app.server.once("error", reject); app.server.listen(port, app.lan ? "0.0.0.0" : "127.0.0.1", resolve); });
-  ctx.effect(() => () => {
-    app.cancelGeneration(); agentBackend.dispose();
-    app.server.closeAllConnections();
-    return new Promise(resolve => app.server.close(resolve));
-  });
-  ctx.provide("whereto", { port: app.server.address().port, agentBackend, server: app.server });
-  ctx.logger.info(`漫游地图插件：http://127.0.0.1:${app.server.address().port} · 生成交给 DSH Agent 会话`);
+  ctx.effect(() => ctx.webServer.register({ kind: "prefix", path: basePath, handler: app.handler }));
+  ctx.effect(() => registerBrowserLaunch(root, { port: ctx.webServer.port, instanceId, connection: ctx.connection }));
+  ctx.provide("whereto", { port: independent.port, basePath: "", agentBackend, server: app.server });
+  console.log([
+    '[DSH 插件] 漫游 (whereto) · 已加载',
+    `[DSH 插件]   本机：http://127.0.0.1:${independent.port}/`,
+    ...(app.lan ? [`[DSH 插件]   局域网：http://${app.lan.address}:${independent.port}/`] : []),
+    '[DSH 插件]   生成：复用 DSH 默认模型与凭据',
+  ].join('\n'));
 }

@@ -42,10 +42,10 @@ export function dshCli({ env = process.env, execPath = process.execPath, run = s
     if (isFile(explicit)) return fs.realpathSync(explicit);
     throw Error(`DSH_CLI 指定的文件不存在：${explicit}。请将它设为 DSH 的 JavaScript 入口文件。`);
   }
-  const managed = path.join(directory, "node_modules/@deepseek-ai/dsh/lib/bin.js");
-  if (isFile(managed)) return managed;
   const onPath = cliOnPath("dsh", "@deepseek-ai/dsh", "lib/bin.js", env);
   if (onPath) return onPath;
+  const managed = path.join(directory, "node_modules/@deepseek-ai/dsh/lib/bin.js");
+  if (isFile(managed)) return managed;
   const candidates = [
     env.APPDATA && path.join(env.APPDATA, "npm/node_modules/@deepseek-ai/dsh/lib/bin.js"),
     path.join(projectRoot, "node_modules/@deepseek-ai/dsh/lib/bin.js"),

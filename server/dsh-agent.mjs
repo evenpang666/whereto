@@ -81,8 +81,7 @@ export function resultFromEvents(events, sessionInfo) {
 // token allocation, tool roster or skill filesystem is reconstructed here.
 export function createDshAgentBackend(ctx, { root, timeoutMs = 15 * 60 * 1000 } = {}) {
   const active = new Map();
-  const webPort = ctx.get?.("webServer")?.port || 3080;
-  const webUrl = `http://127.0.0.1:${webPort}`;
+  const webUrl = "/";
   return {
     webUrl,
     async readResult({ sessionId, placeId }) {

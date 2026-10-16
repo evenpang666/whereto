@@ -32,6 +32,7 @@ export async function createApp({
   fetchImpl = fetch,
   lan = selectLan(),
   agentBackend = null,
+  basePath: mountPath = "", connection: hostConnection = null, webServer: hostServer = null, instanceId, independent,
 } = {}) {
   const store = new LocalStore(dataDir);
   const catalog = JSON.parse(
@@ -41,7 +42,7 @@ export async function createApp({
   const inflight = new Set();
   let generation = null, generationAbort = null;
   const getWeather = createWeatherService({ fetchImpl });
-  const safeConfig = async c => ({ ...validateSettings(c), ...(agentBackend ? await agentBackend.describe(c) : { connected: false }),
+  const safeConfig = async c => ({ ...validateSettings(c), ...(agentBackend ? await agentBackend.describe(c) : { connected: false }), ...(hostServer ? { webUrl: `http://127.0.0.1:${hostServer.port}/` } : {}),
     hasKey: !!agentBackend, estimate: estimate(), managedBy: "dsh" });
   const progress = update => { generation = { ...generation, ...update }; };
   const begin = (kind, placeId) => { generationAbort = new AbortController(); generation = { kind, placeId, status: "starting", message: "正在创建 DSH 会话" }; return generationAbort.signal; };
@@ -65,7 +66,10 @@ export async function createApp({
       throw Error("请求 JSON 无效。");
     }
   }
-  const server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
+    const standalone = Boolean(independent?.port) && independent.port === req.socket.localPort;
+    const connection = standalone ? null : hostConnection, webServer = standalone ? null : hostServer;
+    const basePath = standalone && !req.url.startsWith(mountPath + "/") ? "" : mountPath;
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Frame-Options", "DENY");
@@ -75,10 +79,10 @@ export async function createApp({
     );
     const host = req.headers.host || "";
     const local = isLoopback(req.socket.remoteAddress) && isLocalHost(host);
-    if (!allowedHost(host, lan) || !allowedClient(req.socket.remoteAddress, lan) || (!isLoopback(req.socket.remoteAddress) && isLocalHost(host)))
+    if ((!connection || standalone) && (!allowedHost(host, lan) || !allowedClient(req.socket.remoteAddress, lan) || (!isLoopback(req.socket.remoteAddress) && isLocalHost(host))))
       return json(res, 403, { error: "仅允许本机和所选以太网的同一局域网访问。" });
     if (
-      req.headers.origin &&
+      (!connection || standalone) && req.headers.origin &&
       ![
         `http://${host}`,
         ...(local ? ["http://127.0.0.1:5173", "http://localhost:5173"] : []),
@@ -93,6 +97,23 @@ export async function createApp({
     } catch {
       return json(res, 400, { error: "地址无效。" });
     }
+    if (basePath) {
+      if (pathname !== basePath && !pathname.startsWith(basePath + "/")) return json(res, 404, { error: "页面不存在。" });
+      pathname = pathname.slice(basePath.length) || "/";
+    }
+    if (pathname === "/api/health" && req.method === "GET")
+      return json(res, 200, { ok: true, app: "whereto", version: "1.0.0", engine: agentBackend ? "dsh-agent" : "offline", instanceId, ...(independent?.port ? { url: `http://127.0.0.1:${independent.port}/` } : {}) });
+    if (connection) {
+      if (["/", "/index.html"].includes(pathname)) {
+        const indexRequest = { method: req.method, headers: req.headers, url: "/" + new URL(req.url, "http://localhost").search };
+        const indexResponse = { writeHead(status, headers = {}) { return res.writeHead(status, { ...headers, ...(status === 303 ? { location: basePath + "/" } : {}) }); }, end: data => res.end(data) };
+        if (!connection.authorizeIndex(indexRequest, indexResponse)) return;
+        if (new URL(req.url, "http://localhost").pathname === basePath) { res.writeHead(308, { location: basePath + "/" }); return res.end(); }
+      } else {
+        const rejection = connection.requestRejection(req);
+        if (rejection) return json(res, rejection, { error: rejection === 401 ? "请先登录 DSH Web，再打开漫游。" : "DSH 拒绝了此请求来源。" });
+      }
+    }
     if (
       req.method !== "GET" &&
       (req.headers["x-whereto-client"] !== "local" ||
@@ -100,10 +121,8 @@ export async function createApp({
     )
       return json(res, 403, { error: "请从本地页面操作。" });
     try {
-      if (pathname === "/api/health")
-        return json(res, 200, { ok: true, app: "whereto", version: "1.0.0", engine: agentBackend ? "dsh-agent" : "offline" });
       if (pathname === "/api/runtime" && req.method === "GET")
-        return json(res, 200, { dshWebUrl: agentBackend?.webUrl || null, lanUrl: lan ? `http://${lan.address}:${req.socket.localPort}` : null,
+        return json(res, 200, { dshWebUrl: hostServer ? `http://127.0.0.1:${hostServer.port}/` : agentBackend?.webUrl || null, lanUrl: lan ? `http://${lan.address}:${independent?.port || webServer?.port || req.socket.localPort}${independent?.port ? "" : basePath}/` : null,
           interfaceName: lan?.name || null, canManageSettings: local });
       if (pathname === "/api/settings" && req.method === "GET")
         return json(res, 200, await safeConfig(await store.read("config", defaults)));
@@ -279,8 +298,9 @@ export async function createApp({
     } catch (e) {
       json(res, 400, { error: e.message || "操作失败，请重试。" });
     }
-  });
-  return { server, store, lan, cancelGeneration: () => generationAbort?.abort() };
+  };
+  const server = http.createServer(handler);
+  return { server, handler, store, lan, cancelGeneration: () => generationAbort?.abort() };
 }
 if (
   process.argv[1] &&

@@ -1,3 +1,4 @@
+import { assetUrl } from "./urls.js";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { geoMercator, geoPath, geoArea } from "d3-geo";
@@ -41,7 +42,7 @@ import "./features.css";
 
 const money = (n) => `$${Number(n || 0).toFixed(4)}`;
 async function api(url, options = {}) {
-  const r = await fetch("/api" + url, {
+  const r = await fetch(import.meta.env.BASE_URL + "api" + url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -531,12 +532,12 @@ function imageLabel(place, detailed = false) {
 function PlaceImage({ place, ...props }) {
   return (
     <img
-      src={place.image}
+      src={assetUrl(place.image)}
       alt={`${place.name}，${imageLabel(place, true)}`}
       {...props}
       onError={(e) => {
         e.currentTarget.onerror = null;
-        e.currentTarget.src = `/media/illustration-${place.category}.svg`;
+        e.currentTarget.src = assetUrl(`/media/illustration-${place.category}.svg`);
         e.currentTarget.alt = `${place.name}景观示意，非实景`;
       }}
     />
@@ -754,11 +755,11 @@ function App() {
   const load = () => {
     setError(null);
     Promise.all([
-      fetch("/data/catalog.json").then((r) => {
+      fetch(import.meta.env.BASE_URL + "data/catalog.json").then((r) => {
         if (!r.ok) throw Error("目录加载失败");
         return r.json();
       }),
-      fetch("/data/maps/100000.json").then((r) => r.json()),
+      fetch(import.meta.env.BASE_URL + "data/maps/100000.json").then((r) => r.json()),
       api("/settings"),
       api("/state"),
       api("/runtime"),
@@ -783,7 +784,7 @@ function App() {
     }
     const controller = new AbortController();
     setProvinceMap(null);
-    fetch(`/data/maps/${province.properties.adcode}.json`, {
+    fetch(`${import.meta.env.BASE_URL}data/maps/${province.properties.adcode}.json`, {
       signal: controller.signal,
     })
       .then((r) => {
@@ -981,7 +982,7 @@ function App() {
           }}
           aria-label="漫游whereto 首页"
         >
-          <img src="/brand/mark.svg" alt="" />
+          <img src={import.meta.env.BASE_URL + "brand/mark.svg"} alt="" />
           <span>
             漫游<small>whereto</small>
           </span>

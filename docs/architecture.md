@@ -3,7 +3,7 @@
 ```text
 DSH Web profile（原模型、凭据、预设、工具、skills、持久化）
   └─ dsh-whereto（dsh/index.mjs）
-      ├─ 地图与卡片 HTTP 服务 :3789 → React 界面、收藏、足迹、天气
+      ├─ 宿主 HTTP 前缀 /whereto/ → React 界面、收藏、足迹、天气
       ├─ whereto_read_place 工具、两个旅行业务 skills
       └─ 宿主 sessionController → 新旅行 Agent 会话
           ├─ 默认宿主模型/预设，或沿用参考会话的模型和预设
@@ -15,7 +15,7 @@ DSH Web profile（原模型、凭据、预设、工具、skills、持久化）
 
 项目 package.json 声明 `dsh.bundle.patch`，入口 `dsh/index.mjs`。执行 `npm run dsh:install`，通过官方 `dsh plugin --profile web add link:<项目目录>` 将整个项目作为本地插件加入已有 Web profile。命令保留现有其他插件、模型和预设。DSH 再次启动时加载 bundle 中的 whereto 行。`start.bat`、`start.sh`、`npm start` 会准备构建、注册插件并启动 DSH Web；已启动的新版地图服务直接复用，旧独立服务需先关闭。
 
-插件注入宿主 `sessionController`、`sessions`、`tools`、`skills`、`agentDefaultModel`、`agentPresets` 和 `webServer`，不自建 Cordis/LLM/搜索运行时，不直接请求任何模型 API。端口默认 3789，可由 `WHERETO_PORT` 或插件 config.port 指定。DSH 卸载插件时取消当前生成并关闭地图服务，收藏和缓存保留。
+页面默认独立监听 `0.0.0.0:3101`，本机访问 `http://127.0.0.1:3101/`，局域网设备访问 `http://主机局域网IP:实际端口/`，无需登录。首选端口由 `WHERETO_PORT` 或插件 `config.port` 设置；端口占用时直接使用系统分配的空闲端口，启动器与页面显示实际地址。DSH 的模型和凭据继续复用，管理页认证保留，旧 DSH 子路径仅作兼容入口。
 
 ## 生成与宿主复用
 
@@ -33,11 +33,11 @@ Agent 完成后读取其会话日志，最终 JSON 通过类型、长度、评�
 
 ## 进度、取消和限制
 
-GET /api/generation 返回当前任务的会话 ID 与工具进度。前端每 1.5 秒更新，可打开 DSH Web 或 POST /api/generation/cancel，取消仅作用于本项目当前任务。15 分钟应用等待超时会请求取消，已记录的 DSH 会话保留。权限阻塞和模型错误引导到 DSH 会话处理，不自动重复提交收费任务。
+GET /whereto/api/generation 返回当前任务的会话 ID 与工具进度。前端每 1.5 秒更新，可打开 DSH Web 或 POST /whereto/api/generation/cancel，取消仅作用于本项目当前任务。15 分钟应用等待超时会请求取消，已记录的 DSH 会话保留。权限阻塞和模型错误引导到 DSH 会话处理，不自动重复提交收费任务。
 
-最终结果兼容单一完整 JSON 代码块前后的说明文字。POST /api/places/:id/result 可重新读取已完成会话，不重复 prompt 或计入用量；仅接受本项目为该景点创建的会话，并执行相同内容校验。任务进度按类型和景点匹配，避免在其他卡片显示错误的任务。
+最终结果兼容单一完整 JSON 代码块前后的说明文字。POST /whereto/api/places/:id/result 可重新读取已完成会话，不重复 prompt 或计入用量；仅接受本项目为该景点创建的会话，并执行相同内容校验。任务进度按类型和景点匹配，避免在其他卡片显示错误的任务。
 
-HTTP 服务保留原 Host、Origin、回环和所选以太网子网校验；设置写入仅允许主机回环访问。局域网用户可以使用主机已配置的 Agent 能力，与原共享模式一致。主机 DSH Web 仍使用其自己的登录、权限和网络策略。
+页面默认独立监听 `0.0.0.0:3101`，本机访问 `http://127.0.0.1:3101/`，局域网设备访问 `http://主机局域网IP:实际端口/`，无需登录。首选端口由 `WHERETO_PORT` 或插件 `config.port` 设置；端口占用时直接使用系统分配的空闲端口，启动器与页面显示实际地址。DSH 的模型和凭据继续复用，管理页认证保留，旧 DSH 子路径仅作兼容入口。
 
 ## 数据与天气
 

@@ -7,7 +7,7 @@ export function DshSettings({ settings, onSaved, onError, canManage = true }) {
   const save = async e => {
     e.preventDefault(); setBusy(true);
     try {
-      const response = await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json", "X-Whereto-Client": "local" }, body: JSON.stringify(form) });
+      const response = await fetch(import.meta.env.BASE_URL + "api/settings", { method: "PUT", headers: { "Content-Type": "application/json", "X-Whereto-Client": "local" }, body: JSON.stringify(form) });
       const data = await response.json(); if (!response.ok) throw Error(data.error);
       onSaved(data);
     } catch (error) { onError(error); } finally { setBusy(false); }
@@ -17,7 +17,7 @@ export function DshSettings({ settings, onSaved, onError, canManage = true }) {
       <p>地图负责探索，生成交给 DSH Web 中的 Agent 会话。</p></div>
     <div className="privacy-note"><span>{settings.connected ? `已连接 DSH · ${settings.model || "宿主默认模型"}` : "当前未运行在 DSH Web 插件中"}
       <small>模型、密钥、工具和 skills 由 DSH Web 管理，漫游不再保存独立 API 配置。</small></span></div>
-    <a className="text-link" href={settings.webUrl || "http://127.0.0.1:3080"} target="_blank" rel="noreferrer">打开 DSH Web 管理模型与工具 <ExternalLink size={12} /></a>
+    <a className="text-link" href={settings.webUrl || "/"} target="_blank" rel="noreferrer">打开 DSH Web 管理模型与工具 <ExternalLink size={12} /></a>
     <form className="settings-form" onSubmit={save}><fieldset className="settings-fields" disabled={!canManage || busy}>
       <label>沿用 DSH 会话的配置（可选）<input value={form.sourceSessionId} maxLength={160}
         onChange={e => setForm(f => ({ ...f, sourceSessionId: e.target.value.trim() }))} placeholder="session-…；留空沿用宿主默认模型" /></label>

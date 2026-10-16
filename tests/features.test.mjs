@@ -22,3 +22,11 @@ test("visited matching uses DSH session and rejects out-of-catalog results", asy
   const invalid = mockHost({ value: { matched: [99999], unmatched: [], ambiguous: [] } });
   await assert.rejects(matchVisited({ prepared, catalog, config: {}, agentBackend: createDshAgentBackend(invalid.ctx, { root }) }), /库外/);
 });
+
+test("Wi-Fi-only and private 10.* LANs remain accessible", () => {
+  const lan = selectLan({ wlan0: [{ family: "IPv4", internal: false, address: "10.0.0.12", netmask: "255.255.255.0" }] });
+  assert.equal(lan.address, "10.0.0.12");
+  assert.equal(allowedClient("10.0.0.24", lan), true);
+  assert.equal(allowedClient("10.0.1.24", lan), false);
+  assert.equal(allowedHost("10.0.0.12:3101", lan), true);
+});

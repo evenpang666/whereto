@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { promisify } from "node:util";
 import { dshCli, projectRoot } from "../scripts/dsh-runtime.mjs";
-import { dshWebAddress, probeDshWeb } from "../scripts/running-dsh.mjs";
+import { dshWebAddress, probeDshWeb, discoverDshWeb } from "../scripts/running-dsh.mjs";
 const runFile = promisify(execFile);
 
 async function serverAt(t, handler) {
@@ -130,10 +130,10 @@ test("a ready map reuses its host before requiring any local DSH or npm installa
   const f = fixture(t);
   const map = await serverAt(t, (req, res) => {
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify(req.url === "/api/health" ? { app: "whereto", engine: "dsh-agent" } : { dshWebUrl: "http://127.0.0.1:3199" }));
+    res.end(JSON.stringify(req.url === "/whereto/api/health" ? { app: "whereto", engine: "dsh-agent" } : { dshWebUrl: "http://127.0.0.1:3199" }));
   });
   const result = await runFile(process.execPath, [path.join(projectRoot, "scripts/launch.mjs"), "--no-open"], {
-    env: { ...process.env, WHERETO_PORT: String(map.port), DSH_CLI: path.join(f.dir, "missing-dsh.mjs"), npm_execpath: path.join(f.dir, "missing-npm.mjs") }, timeout: 15000,
+    env: { ...process.env, DSH_WEB_PORT: String(map.port), DSH_CLI: path.join(f.dir, "missing-dsh.mjs"), npm_execpath: path.join(f.dir, "missing-npm.mjs") }, timeout: 15000,
   });
   assert.match(result.stdout, /复用现有 DSH 服务/);
   assert.match(result.stdout, /DSH Web：http:\/\/127\.0\.0\.1:3199/);
@@ -143,9 +143,9 @@ test("a ready map reuses its host before requiring any local DSH or npm installa
 test("an existing DSH host never launches another Web process, including when its plugin needs a restart", async t => {
   for (const canLoad of [true, false]) await t.test(canLoad ? "plugin becomes ready" : "plugin requires restart", async t => {
   const f = fixture(t), calls = path.join(f.dir, "calls.json");
-  const dsh = await serverAt(t, (_req, res) => { res.writeHead(401); res.end("dsh web authentication required"); });
-  const map = await serverAt(t, (req, res) => {
-    if (canLoad && req.url === "/api/health" && fs.existsSync(calls)) { res.end(JSON.stringify({ app: "whereto", engine: "dsh-agent" })); return; }
+  const dsh = await serverAt(t, (req, res) => {
+    if (req.url === "/") { res.writeHead(401); res.end("dsh web authentication required"); return; }
+    if (canLoad && req.url === "/whereto/api/health" && fs.existsSync(calls)) { res.end(JSON.stringify({ app: "whereto", engine: "dsh-agent" })); return; }
     res.writeHead(404); res.end();
   });
   const cli = f.write("fake-dsh.mjs", 'import fs from "node:fs"; if(process.argv.includes("--version")) console.log("99.0.0"); else fs.writeFileSync(process.env.WHERETO_TEST_ARGS, JSON.stringify(process.argv.slice(2)));');
@@ -154,7 +154,7 @@ test("an existing DSH host never launches another Web process, including when it
   f.write("bin/pnpm.cmd", "@echo 10.0.0\r\n");
   const launch = () => runFile(process.execPath, [path.join(projectRoot, "scripts/launch.mjs"), "--no-open"], {
     env: { ...process.env, PATH: path.join(f.dir, "bin") + path.delimiter + process.env.PATH, npm_execpath: npm, DSH_CLI: cli,
-      DSH_HOME: path.join(f.dir, "home"), WHERETO_TEST_ARGS: calls, WHERETO_PORT: String(map.port), DSH_WEB_PORT: String(dsh.port) }, timeout: 15000,
+      DSH_HOME: path.join(f.dir, "home"), WHERETO_TEST_ARGS: calls, DSH_WEB_PORT: String(dsh.port) }, timeout: 15000,
   });
   if (canLoad) {
     const result = await launch();
@@ -183,4 +183,15 @@ test("an unrelated server on the DSH port stops startup before changing the envi
     assert.ok(!error.stdout.includes("检查启动环境"));
     return true;
   });
+});
+
+test("PATH DSH takes precedence over an existing private runtime",t=>{
+  const f=fixture(t);const cli=f.write("shared/lib/bin.js","#!/usr/bin/env node\n");f.write("runtime/node_modules/@deepseek-ai/dsh/lib/bin.js","old private runtime");fs.mkdirSync(f.env.PATH,{recursive:true});fs.symlinkSync(cli,path.join(f.env.PATH,"dsh"));
+  assert.equal(dshCli({...f,run:()=>assert.fail("no npm query")}),cli);
+});
+
+test("mounted map discovers the current DSH port while explicit addresses take precedence", async()=>{
+  const options={processList:'node /shared/node_modules/@deepseek-ai/dsh/lib/bin.js web --port 3199',fetchImpl:async()=>new Response('',{status:404}),probe:async base=>base.endsWith(':3199')?'running':'stopped'};
+  assert.equal(await discoverDshWeb({},options),'http://127.0.0.1:3199');
+  assert.equal(await discoverDshWeb({DSH_WEB_URL:'http://localhost:4567'},options),'http://localhost:4567');
 });

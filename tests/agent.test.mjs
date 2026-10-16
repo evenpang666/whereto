@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { once } from "node:events";
 import { Context } from "@deepseek-ai/cordis";
 import * as plugin from "../dsh/index.mjs";
@@ -8,17 +9,43 @@ import { generateDetail, validateDetail, detailFromTask } from "../server/harnes
 import { createApp } from "../server/index.mjs";
 import { root, place, full, url, excerpt, headers, temp, cleanup, mockHost } from "./helpers.mjs";
 
-test("whole-project plugin declares DSH host dependencies and mounts its UI with lifecycle cleanup", async () => {
+test("whole-project plugin mounts authenticated UI on the DSH listener and cleans up only its routes", async () => {
   const dir = await temp(), ctx = new Context(), host = mockHost(); const tools = [], skills = [];
+  let handler;
+  const server = createServer((req, res) => handler && req.url.startsWith('/whereto') ? handler(req, res) : (res.writeHead(404), res.end()));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/whereto`;
+  const auth = { headers: { Cookie: 'dsh=valid' } };
   for (const [key, value] of Object.entries(host.ctx)) if (!["on", "get"].includes(key)) ctx.provide(key, value);
-  ctx.provide("tools", { register: value => tools.push(value) }); ctx.provide("skills", { register: value => skills.push(value) }); ctx.provide("webServer", { port: 3080 });
+  ctx.provide("tools", { register: value => tools.push(value) }); ctx.provide("skills", { register: value => skills.push(value) });
+  ctx.provide("webServer", { port: server.address().port, host: '127.0.0.1', register(route) { assert.equal(route.path, '/whereto'); handler = route.handler; return () => { handler = null; }; } });
+  ctx.provide("connection", {
+    authenticatedUrl: base => base + '?token=test-token',
+    authorizeIndex(req,res) { if (req.url === '/?token=test-token') { res.writeHead(303, { location: './', 'set-cookie': 'dsh=valid; HttpOnly' }); res.end(); return false; } if (req.headers.cookie === 'dsh=valid') return true; res.writeHead(401); res.end(); return false; },
+    requestRejection: req => req.headers.cookie !== 'dsh=valid' ? 401 : req.headers.origin === 'https://evil.example' ? 403 : undefined,
+  });
   try {
-    const fiber = await ctx.plugin(plugin, { port: 0, lan: false, dataDir: dir }).await();
+    const fiber = await ctx.plugin(plugin, { lan: false, dataDir: dir, port: 0 }).await();
     const app = ctx.get("whereto");
-    assert.equal((await (await fetch(`http://127.0.0.1:${app.port}/api/health`)).json()).engine, "dsh-agent");
+    assert.notEqual(app.port, server.address().port); assert.equal(app.server.listening, true);
+    const independent = `http://127.0.0.1:${app.port}`;
+    assert.equal((await fetch(independent + '/')).status, 200);
+    assert.equal((await fetch(independent + '/api/state')).status, 200);
+    assert.equal((await fetch(independent + '/api/state', auth)).status, 200);
+    assert.equal((await fetch(independent + '/api/state', { headers: { ...auth.headers, Origin: 'https://evil.example' } })).status, 403);
+    assert.equal((await fetch(independent + '/', auth)).status, 200);
+    assert.equal((await fetch(independent + '/whereto/assets/missing.js', auth)).status, 404);
+    assert.equal((await (await fetch(base + '/api/health')).json()).engine, 'dsh-agent');
+    assert.equal((await fetch(base + '/')).status, 401); assert.equal((await fetch(base + '/api/state')).status, 401);
+    assert.equal((await fetch(base + '/brand/mark.svg')).status, 401);
+    const login = await fetch(base + '/?token=test-token', { redirect: 'manual' }); assert.equal(login.status,303); assert.equal(login.headers.get('location'),'/whereto/');
+    assert.equal((await fetch(base + '/api/state', auth)).status,200);
+    assert.equal((await fetch(base + '/api/state', {headers:{...auth.headers,Origin:'https://evil.example'}})).status,403);
+    const html = await (await fetch(base + '/', auth)).text(); assert.match(html,/\/whereto\/assets\//);
+    assert.equal((await fetch(base + '/data/catalog.json',auth)).status,200);
     assert.ok(tools.some(t => t.name === "whereto_read_place")); assert.ok(skills.some(s => s.name === "whereto-travel-guide"));
-    await fiber.dispose(); assert.equal(app.server.listening, false);
-  } finally { await ctx.fiber.dispose(); await cleanup(dir); }
+    await fiber.dispose(); assert.equal(handler,null); assert.equal(server.listening,true); assert.equal(app.server.listening,false);
+  } finally { await ctx.fiber.dispose(); await new Promise(resolve=>server.close(resolve)); await cleanup(dir); }
 });
 test("generation creates DSH Web sessions without allocating tokens or supplying a model/client", async () => {
   const host = mockHost(), ledger = [], updates = [];

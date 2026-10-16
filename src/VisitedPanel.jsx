@@ -1,3 +1,4 @@
+import { assetUrl } from "./urls.js";
 import React, { useEffect, useRef, useState } from "react";
 import { CheckCheck, Loader2, Sparkles, ArrowUpRight, MapPin } from "lucide-react";
 import { AgentProgress } from "./AgentProgress.jsx";
@@ -66,7 +67,7 @@ export function VisitedPanel({ catalog, state, settings, api, matching, onBusy, 
     <div className="visited-list">
       {list.map(p => <article key={p.id} className={state.visited.includes(p.id) ? "is-visited" : ""}>
         <button className="visited-card-open" onClick={() => onPlace(p)}>
-          <img src={p.image} alt={p.name} loading="lazy" />
+          <img src={assetUrl(p.image)} alt={p.name} loading="lazy" />
           <span><small><MapPin size={11} /> {p.city}</small><strong>{p.name}</strong><small>{p.category}{p.imageKind === "ai-illustration" ? " · AI 印象图 · $0" : " · 参考配图"}</small></span>
         </button>
         <button className="visited-toggle" aria-label={`${state.visited.includes(p.id) ? "撤销去过" : "标记去过"}${p.name}`}

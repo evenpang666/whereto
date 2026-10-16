@@ -4,28 +4,29 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ensureDshPlugin, npmCli } from "./dsh-runtime.mjs";
 import { prepareRuntime } from "./prepare-runtime.mjs";
-import { dshWebAddress, probeDshWeb } from "./running-dsh.mjs";
+import { studioLaunchUrl } from "./browser-launch.mjs";
+import { discoverDshWeb, probeDshWeb } from "./running-dsh.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(root);
-const port = Number(process.env.WHERETO_PORT || process.env.PORT || 3789);
-if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-  console.error("PORT 必须为 1024–65535 的整数。");
-  process.exit(1);
-}
-const url = `http://127.0.0.1:${port}`;
 const quiet = process.argv.includes("--no-open") || process.env.WHERETO_NO_OPEN === "1";
 let cli, dshUrl;
-try { dshUrl = dshWebAddress(); }
+try { dshUrl = await discoverDshWeb(process.env, { directory: root }); }
 catch (error) { console.error(error.message); process.exit(1); }
+const url = dshUrl + "/whereto";
+let instanceId, appUrl;
 function openBrowser() {
   if (quiet) return;
+  const handoff = new URL(studioLaunchUrl(root, dshUrl, instanceId));
+  const destination = new URL(appUrl || handoff.href);
+  if (!appUrl && handoff.searchParams.has("token")) destination.searchParams.set("token", handoff.searchParams.get("token"));
+  const target = destination.href;
   if (process.platform === "win32")
-    spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], {
+    spawn("rundll32.exe", ["url.dll,FileProtocolHandler", target], {
       stdio: "ignore",
       windowsHide: true,
     }).unref();
   else
-    spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], {
+    spawn(process.platform === "darwin" ? "open" : "xdg-open", [target], {
       stdio: "ignore",
     })
       .on("error", () => console.log(`请手动打开 ${url}`))
@@ -41,7 +42,9 @@ try {
     process.exit(1);
   }
   if (health?.app === "whereto") {
-    console.log(`漫游whereto已在运行：${url}`);
+    instanceId = health.instanceId;
+    if (health.url) { const target = new URL(health.url); if (target.protocol === "http:" && target.hostname === "127.0.0.1" && !target.username && !target.password) appUrl = target.href; }
+    console.log(`漫游whereto已在运行：${appUrl || url + "/"}`);
     console.log("复用现有 DSH 服务。");
     await printAddresses();
     openBrowser();
@@ -49,10 +52,10 @@ try {
   }
 } catch {}
 async function printAddresses() {
-  console.log(`漫游地图：${url}`);
+  console.log(`漫游地图：${appUrl || url + "/"}`);
   let runtime;
   try {
-    const network = await fetch(url + "/api/runtime", { signal: AbortSignal.timeout(1000) });
+    const network = await fetch((appUrl || url + "/") + "api/runtime", { signal: AbortSignal.timeout(1000) });
     if (network.ok) runtime = await network.json();
   } catch {}
   console.log(`DSH Web：${runtime?.dshWebUrl || dshUrl}`);
@@ -124,6 +127,8 @@ if (existingDsh === "running") {
       const response = await fetch(url + "/api/health", { signal: AbortSignal.timeout(500) });
       const health = response.ok ? await response.json() : null;
       if (health?.app === "whereto" && health.engine === "dsh-agent") {
+        instanceId = health.instanceId;
+    if (health.url) { const target = new URL(health.url); if (target.protocol === "http:" && target.hostname === "127.0.0.1" && !target.username && !target.password) appUrl = target.href; }
         await printAddresses();
         openBrowser();
         process.exit(0);
@@ -135,10 +140,10 @@ if (existingDsh === "running") {
   process.exit(1);
 }
 // DSH prints its authenticated login URL; only the map opens automatically.
-const child = spawn(process.execPath, [cli, "web", "--no-open", ...(process.env.DSH_WEB_PORT ? ["--port", String(new URL(dshUrl).port)] : [])], {
+const child = spawn(process.execPath, [cli, "web", "--no-open", "--port", String(new URL(dshUrl).port || 80)], {
   stdio: "inherit",
   cwd: root,
-  env: { ...process.env, WHERETO_PORT: String(port) },
+  env: process.env,
   windowsHide: true,
 });
 let stopped = false;
@@ -156,7 +161,10 @@ for (let n = 0; n < 40; n++) {
     const r = await fetch(url + "/api/health", {
       signal: AbortSignal.timeout(500),
     });
-    if (r.ok && (await r.json()).app === "whereto") {
+    const health = r.ok ? await r.json() : null;
+    if (health?.app === "whereto") {
+      instanceId = health.instanceId;
+    if (health.url) { const target = new URL(health.url); if (target.protocol === "http:" && target.hostname === "127.0.0.1" && !target.username && !target.password) appUrl = target.href; }
       await printAddresses();
       console.log("关闭此窗口或按 Ctrl+C 可停止服务。");
       openBrowser();
