@@ -26,6 +26,7 @@ test("generation creates DSH Web sessions without allocating tokens or supplying
   assert.deepEqual(host.creates, [{ cwd: root }]); assert.equal(host.selections.length, 0);
   assert.equal(host.requests[0].mode, "queue"); assert.match(host.requests[0].content[0].text, /site:xiaohongshu.com/);
   assert.equal(result.schemaVersion, 4); assert.equal(result.agent.model, "host-model"); assert.equal(result.realReviews[0].excerpt, excerpt);
+  assert.equal(result.prose, full.prose);
   assert.equal(ledger.length, 1); assert.equal(ledger[0].cost, null); assert.ok(updates.some(p => p.message.includes("web_search")));
   assert.equal(host.listeners.size, 0); assert.equal(result.usage.input, 100);
 });
@@ -37,7 +38,10 @@ test("reference-session model and preset are inherited without prompting or edit
 });
 test("model output cannot invent evaluation sources, and free text is not mined for URLs", () => {
   const research = sessionEvidence([{ type: "assistant/message", data: { message: { content: [{ type: "text", text: `source ${url}` }] } } }]);
-  assert.equal(research.sources.length, 0); assert.throws(() => validateDetail(full, research), /真实评价/);
+  assert.equal(research.sources.length, 0);
+  const detail = validateDetail(full, research);
+  assert.equal(detail.realReviews.length, 0); assert.equal(detail.omittedReviews, 1);
+  assert.equal(detail.intro, full.intro);
   assert.deepEqual(parseAgentJson('```json\n{"ok":true}\n```'), { ok: true }); assert.throws(() => parseAgentJson("prefix {}"), /JSON/);
   assert.deepEqual(parseAgentJson('检索完成。\n```json\n{"ok":true}\n```\n结束。'), { ok: true });
   assert.throws(() => parseAgentJson('```json\n{"a":1}\n```\n```json\n{"a":2}\n```'), /JSON/);
@@ -61,7 +65,10 @@ test("page excerpts must match fetched tool text and full page bodies never ente
   assert.equal(detail.realReviews[0].excerpt, excerpt);
   assert.ok(!JSON.stringify(detail).includes("verificationText"));
   assert.ok(!JSON.stringify(detail).includes("更多内容"));
-  assert.throws(() => validateDetail({ ...value, reviewExcerpts: { [url]: "这是一段模型杜撰、没有在网页出现过的评价。" } }, research), /原文不一致/);
+  const mismatched = detailFromTask(place, { value: { ...value, reviewExcerpts: { [url]: "这是一段模型杜撰、没有在网页出现过的评价。" } }, research, agent: {} });
+  assert.equal(mismatched.realReviews.length, 0);
+  assert.equal(mismatched.research.omittedReviews, 1);
+  assert.equal(mismatched.intro, value.intro);
   assert.equal(validateDetail(full, research).realReviews.length, 0);
   assert.equal(detailFromTask(place, { value: full, research, agent: {} }).research.omittedReviews, 1);
 });
@@ -71,6 +78,104 @@ test("failed and blocked DSH turns retain usage and do not retry or cache an ans
     await assert.rejects(generateDetail({ place, config: {}, agentBackend: createDshAgentBackend(host.ctx, { root }), onUsage: u => ledger.push(u) }), /DSH/);
     assert.equal(ledger.length, 1); assert.equal(host.requests.length, 1); assert.equal(host.listeners.size, 0);
   }
+});
+test("quote verification retains long search snippets and all fetched versions without caching full text", () => {
+  const firstQuote = "这是搜索摘要末尾的亲历描述，沿着湖边慢慢走很舒服。";
+  const secondQuote = "这是第二次获取页面中的亲历描述，清早到达时游客还比较少。";
+  const research = sessionEvidence([
+    { type: "tool/result", data: { meta: { sources: [{ url, snippet: "开头内容".repeat(100) + firstQuote }] } } },
+    { type: "tool/result", data: { meta: { url, statusCode: 200 }, message: { content: [{ type: "tool-result", content: [{ type: "text", text: secondQuote }] }] } } },
+    { type: "tool/result", data: { meta: { url, statusCode: 200 }, message: { content: [{ type: "tool-result", content: [{ type: "text", text: "页面刷新后只显示了登录提示。" }] }] } } },
+  ]);
+  for (const quote of [firstQuote, secondQuote]) {
+    const detail = detailFromTask(place, { value: { ...full, reviewExcerpts: { [url]: quote } }, research, agent: {} });
+    assert.equal(detail.realReviews[0].excerpt, quote);
+    assert.ok(!JSON.stringify(detail).includes("verificationTexts"));
+    assert.ok(!JSON.stringify(detail).includes("页面刷新后"));
+  }
+});
+
+test("mismatched reviews are omitted individually while verified reviews remain", () => {
+  const second = "https://www.zhihu.com/question/123/answer/789";
+  const research = sessionEvidence([{ type: "tool/result", data: { meta: { sources: [{ url, snippet: excerpt }, { url: second, snippet: excerpt }] } } }]);
+  const detail = detailFromTask(place, { value: { ...full, reviewUrls: [url, second], reviewExcerpts: {
+    [url]: excerpt, [second]: "这是一段未出现在工具原文中的改写评价。",
+  } }, research, agent: {} });
+  assert.equal(detail.realReviews.length, 1);
+  assert.equal(detail.realReviews[0].url, url);
+  assert.equal(detail.research.omittedReviews, 1);
+});
+
+test("failed Web tool results cannot supply quote evidence", () => {
+  const research = sessionEvidence([{ type: "tool/result", data: {
+    meta: { sources: [{ url, snippet: excerpt }] }, message: { isError: true, content: [{ type: "text", text: excerpt }] },
+  } }]);
+  assert.equal(research.sources.length, 0);
+});
+
+test("review URL comparison normalizes fragments and URL syntax without merging distinct pages", () => {
+  const research = sessionEvidence([{ type: "tool/result", data: { meta: { sources: [{ url, snippet: excerpt }] } } }]);
+  const variant = url.replace("https://www.zhihu.com", "https://WWW.ZHIHU.COM:443") + "#comment";
+  const detail = detailFromTask(place, { value: { ...full,
+    reviewUrls: [variant, url, url + "?answer=other", url + "/other"],
+    reviewExcerpts: { [url + "#quote"]: excerpt },
+  }, research, agent: {} });
+  assert.equal(detail.realReviews.length, 1);
+  assert.equal(detail.realReviews[0].url, url);
+  assert.equal(detail.realReviews[0].excerpt, excerpt);
+  assert.equal(detail.research.omittedReviews, 2);
+});
+
+test("missing, malformed, unsupported and unverified review data never rejects valid card text", () => {
+  const research = sessionEvidence([{ type: "tool/result", data: { meta: { sources: [{ url, snippet: excerpt }] } } }]);
+  const cases = [
+    [undefined, 0], [null, 0], ["not an array", 1], [{ url }, 1],
+    [[null, 42, {}, "javascript:alert(1)", "http://127.0.0.1/private", "https://example.com/unknown"], 6],
+  ];
+  for (const [reviewUrls, omitted] of cases) {
+    const detail = detailFromTask(place, { value: { ...full, reviewUrls }, research, agent: {} });
+    assert.equal(detail.intro, full.intro);
+    assert.equal(detail.realReviews.length, 0);
+    assert.equal(detail.research.omittedReviews, omitted);
+  }
+  for (const quote of [null, 42, {}, "过短", "未在工具结果中出现的模型改写评价，不能用它替代游客原文。"])
+    assert.equal(validateDetail({ ...full, reviewExcerpts: { [url]: quote } }, research).realReviews.length, 0);
+  assert.throws(() => validateDetail({ ...full, intro: "" }, research), /intro/);
+});
+
+test("review limits and large search result lists do not discard selected source evidence", () => {
+  const sources = Array.from({ length: 45 }, (_, i) => ({ url: `https://example.com/review/${i}`, snippet: excerpt }));
+  const research = sessionEvidence([{ type: "tool/result", data: { meta: { sources } } }]);
+  const last = sources.at(-1).url;
+  assert.equal(validateDetail({ ...full, reviewUrls: [last] }, research).realReviews[0].url, last);
+  const detail = detailFromTask(place, { value: { ...full, reviewUrls: sources.slice(0, 11).map(source => source.url) }, research, agent: {} });
+  assert.equal(detail.realReviews.length, 9);
+  assert.equal(detail.research.omittedReviews, 2);
+});
+
+test("generation and completed-session recovery save cards with unknown review URLs without another model call", async () => {
+  const dir = await temp(), host = mockHost({ value: { ...full, reviewUrls: ["https://example.com/unknown-review"] } });
+  const backend = createDshAgentBackend(host.ctx, { root });
+  const { server, store } = await createApp({ dataDir: dir, lan: null, agentBackend: backend });
+  await store.update("details", {}, () => ({ [place.id]: { schemaVersion: 3, intro: "previous" } }));
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const base = `http://127.0.0.1:${server.address().port}/api/places/${place.id}`;
+  const post = (suffix, body) => fetch(base + suffix, { method: "POST", headers, body: JSON.stringify(body) });
+  try {
+    const response = await post("/generate", {});
+    assert.equal(response.status, 200);
+    const { detail } = await response.json();
+    assert.equal(detail.intro, full.intro);
+    assert.equal(detail.realReviews.length, 0);
+    assert.equal(detail.research.omittedReviews, 1);
+    assert.deepEqual((await store.read("details", {}))[place.id], detail);
+    const recovered = await post("/result", { sessionId: detail.agent.sessionId });
+    assert.equal(recovered.status, 200);
+    assert.equal((await recovered.json()).detail.research.omittedReviews, 1);
+    assert.equal((await (await post("/generate", {})).json()).cached, true);
+    assert.equal(host.requests.length, 1);
+    assert.equal((await store.read("usage", [])).length, 1);
+  } finally { await new Promise(resolve => server.close(resolve)); await cleanup(dir); }
 });
 test("cancellation reaches the DSH session, cleans listeners and preserves the original session", async () => {
   let release; const wait = new Promise(resolve => { release = resolve; });

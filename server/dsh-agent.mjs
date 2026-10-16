@@ -15,7 +15,7 @@ export function sessionEvidence(events) {
   let truncated = false;
   for (const event of events) {
     if (event.type === "tool/call") calls.set(event.data.callId, event.data.name);
-    if (event.type !== "tool/result" || event.data.message?.content?.some(b => b.isError)) continue;
+    if (event.type !== "tool/result" || event.data.message?.isError || event.data.message?.content?.some(b => b.isError)) continue;
     const meta = event.data.meta;
     // Trust tool-produced structured evidence, never URLs asserted by the final answer.
     const candidates = Array.isArray(meta?.sources) ? meta.sources : [];
@@ -26,24 +26,31 @@ export function sessionEvidence(events) {
       const host = new URL(url).hostname;
       const excerpt = typeof source.snippet === "string" ? source.snippet.trim().slice(0, 240) : "";
       const previous = sources.get(url);
-      if (!previous || (!previous.excerpt && excerpt)) sources.set(url, { url,
+      if (!previous || (!previous.excerpt && excerpt)) sources.set(url, { ...previous, url,
         title: typeof source.title === "string" ? source.title.slice(0, 150) : host, excerpt,
         publishedAt: typeof source.publishedAt === "string" ? source.publishedAt.slice(0, 60) : "",
         platform: /(^|\.)xiaohongshu\.com$/.test(host) ? "小红书" : /(^|\.)zhihu\.com$/.test(host) ? "知乎" : "网页" });
+      if (typeof source.snippet === "string" && source.snippet.trim()) {
+        const stored = sources.get(url);
+        stored.verificationTexts = [...(stored.verificationTexts || []), source.snippet.slice(0, 200000)].slice(-20);
+      }
     }
     // DSH web_fetch can provide the original page even when search only yields
     // title-level sources. Keep its text transiently to verify explicit quotes.
     const fetchedUrl = publicUrl(meta?.url);
     if (fetchedUrl && meta.statusCode >= 200 && meta.statusCode < 300) {
-      const body = (event.data.message?.content || []).filter(b => b.type === "tool-result").map(b => plainText(b)).join("\n").slice(0, 200000);
+      const body = (event.data.message?.content || []).map(b =>
+        ["tool-result", "tool_result"].includes(b.type) ? plainText(b) : b.type === "text" ? b.text : ""
+      ).join("\n").slice(0, 200000);
       if (body) {
         const previous = sources.get(fetchedUrl);
-        sources.set(fetchedUrl, { ...(previous || { url: fetchedUrl, title: new URL(fetchedUrl).hostname, platform: "网页", excerpt: "", publishedAt: "" }), verificationText: body });
+        sources.set(fetchedUrl, { ...(previous || { url: fetchedUrl, title: new URL(fetchedUrl).hostname, platform: "网页", excerpt: "", publishedAt: "" }),
+          verificationTexts: [...(previous?.verificationTexts || []), body].slice(-20) });
       }
     }
   }
   return { provider: "dsh-agent-session", searchedAt: new Date().toISOString(), truncated,
-    sources: [...sources.values()].slice(0, 40), tools: [...new Set(calls.values())] };
+    sources: [...sources.values()], tools: [...new Set(calls.values())] };
 }
 function selectionFrom(events) {
   let selected;
@@ -77,6 +84,7 @@ export function createDshAgentBackend(ctx, { root, timeoutMs = 15 * 60 * 1000 } 
   const webPort = ctx.get?.("webServer")?.port || 3080;
   const webUrl = `http://127.0.0.1:${webPort}`;
   return {
+    webUrl,
     async readResult({ sessionId, placeId }) {
       if (typeof sessionId !== "string" || !/^[a-zA-Z0-9_.-]{1,160}$/.test(sessionId)) throw Error("DSH 会话 ID 无效。");
       const inspection = await ctx.sessionController.inspect(sessionId);

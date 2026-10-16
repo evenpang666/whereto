@@ -103,7 +103,7 @@ export async function createApp({
       if (pathname === "/api/health")
         return json(res, 200, { ok: true, app: "whereto", version: "1.0.0", engine: agentBackend ? "dsh-agent" : "offline" });
       if (pathname === "/api/runtime" && req.method === "GET")
-        return json(res, 200, { lanUrl: lan ? `http://${lan.address}:${req.socket.localPort}` : null,
+        return json(res, 200, { dshWebUrl: agentBackend?.webUrl || null, lanUrl: lan ? `http://${lan.address}:${req.socket.localPort}` : null,
           interfaceName: lan?.name || null, canManageSettings: local });
       if (pathname === "/api/settings" && req.method === "GET")
         return json(res, 200, await safeConfig(await store.read("config", defaults)));

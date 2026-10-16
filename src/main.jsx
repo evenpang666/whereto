@@ -564,6 +564,7 @@ function Detail({
   const weatherState = usePlaceWeather(place.id, api);
   const theme = weatherState.weather?.theme || "neutral";
   const inspiration = localInspiration(place);
+  const generatedProse = detail?.kind === "dsh-agent" ? detail.prose?.trim() : "";
   const outdated = detail && detail.schemaVersion !== 4;
   const reviews = detail?.realReviews || [];
   return (
@@ -596,17 +597,26 @@ function Detail({
         </div>
         <div className="detail-sections">
           <section className="scenic-prose" aria-label="风景邀约">
-            <span className="prose-eyebrow">把这一站，写进旅途</span>
-            <p>{d.prose || inspiration.prose}</p>
+            <div className="prose-heading">
+              <span className="prose-eyebrow">把这一站，写进旅途</span>
+              {generatedProse && <span className="prose-source">DSH Web 生成</span>}
+            </div>
+            {generatedProse ? <p>{generatedProse}</p> : <>
+              <p className="prose-pending">由 DSH Web 为这处风景写一段散文简介，与旅行解读一起生成并保存。</p>
+              <button type="button" className="text-link prose-generate" onClick={settings.hasKey ? onGenerate : onSettings} disabled={loading || generating}>
+                {generating ? <Loader2 size={13} className="spin" /> : <Sparkles size={13} />}
+                {generating ? "正在写散文简介…" : settings.hasKey ? "生成散文简介与解读" : "连接 DSH，生成散文简介"}
+              </button>
+            </>}
           </section>
-          <section>
+          <section className="detail-section section-story">
             <h3>
               <BookOpen size={16} />
               风景背后的故事
             </h3>
             <p>{d.history}</p>
           </section>
-          <section>
+          <section className="detail-section section-reviews">
             <h3>
               <Compass size={16} />
               游客反响
@@ -626,9 +636,10 @@ function Detail({
               <div className="review-search-links">{reviewSearchLinks(place).map(s => <a key={s.title} href={s.url} target="_blank" rel="noreferrer">{s.title} <ArrowUpRight size={11} /></a>)}</div>
               {detail?.research && <small className="review-search-date">检索于 {new Date(detail.research.searchedAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })} · 平台登录与网页索引可能限制结果</small>}
               {detail?.research?.truncated && <small className="review-search-date">部分检索内容未完整返回，本次仅使用已取得的网页资料，平台覆盖可能不完整。</small>}
+              {detail?.research?.omittedReviews > 0 && <small className="review-search-date">{detail.research.omittedReviews} 条评价未通过引用检查，已略过；其余解读已保留。</small>}
             </div>
           </section>
-          <section className="ai-note">
+          <section className="detail-section section-inspiration ai-note">
             <h3>
               <Sparkles size={16} />
               {detail ? "DSH Agent 的旅行手记" : "一份旅行灵感"}
@@ -636,7 +647,7 @@ function Detail({
             </h3>
             <p>{d.aiReview}</p>
           </section>
-          <section>
+          <section className="detail-section section-tips">
             <h3>出发前的小事</h3>
             <p>{d.tips}</p>
           </section>

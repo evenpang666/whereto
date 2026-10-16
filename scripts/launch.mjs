@@ -2,7 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { ensureDshPlugin } from "./dsh-runtime.mjs";
+import { ensureDshPlugin, npmCli } from "./dsh-runtime.mjs";
+import { prepareRuntime } from "./prepare-runtime.mjs";
+import { dshWebAddress, probeDshWeb } from "./running-dsh.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(root);
 const port = Number(process.env.WHERETO_PORT || process.env.PORT || 3789);
@@ -12,6 +14,9 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) {
 }
 const url = `http://127.0.0.1:${port}`;
 const quiet = process.argv.includes("--no-open") || process.env.WHERETO_NO_OPEN === "1";
+let cli, dshUrl;
+try { dshUrl = dshWebAddress(); }
+catch (error) { console.error(error.message); process.exit(1); }
 function openBrowser() {
   if (quiet) return;
   if (process.platform === "win32")
@@ -37,46 +42,48 @@ try {
   }
   if (health?.app === "whereto") {
     console.log(`漫游whereto已在运行：${url}`);
-    const network = await fetch(url + "/api/runtime", { signal: AbortSignal.timeout(1000) });
-    if (network.ok) {
-      const runtime = await network.json();
-      if (runtime.lanUrl) console.log(`同一局域网手机访问：${runtime.lanUrl}（${runtime.interfaceName}）`);
-    }
+    console.log("复用现有 DSH 服务。");
+    await printAddresses();
     openBrowser();
     process.exit(0);
   }
 } catch {}
-const nodeMajor = Number(process.versions.node.split(".")[0]);
-if (nodeMajor < 22) {
-  console.error("请先安装 Node.js 22 或更新版本：https://nodejs.org/");
-  process.exit(1);
+async function printAddresses() {
+  console.log(`漫游地图：${url}`);
+  let runtime;
+  try {
+    const network = await fetch(url + "/api/runtime", { signal: AbortSignal.timeout(1000) });
+    if (network.ok) runtime = await network.json();
+  } catch {}
+  console.log(`DSH Web：${runtime?.dshWebUrl || dshUrl}`);
+  if (runtime?.lanUrl) console.log(`同一局域网手机访问：${runtime.lanUrl}（${runtime.interfaceName}）`);
 }
-const npmArgs = process.env.npm_execpath;
+async function dshState() {
+  const state = await probeDshWeb(dshUrl);
+  if (state === "occupied") throw Error(`${dshUrl} 已被其他服务占用，未启动 DSH。请检查端口，或用 DSH_WEB_PORT 指定现有 DSH Web 的端口。`);
+  return state;
+}
+let existingDsh;
+try {
+  existingDsh = await dshState();
+  if (existingDsh === "running") console.log(`DSH Web 已在运行，将复用：${dshUrl}`);
+  cli = prepareRuntime();
+} catch (error) { console.error(error.message); process.exit(1); }
 function npm(args) {
   // Resolve npm's CLI without shell interpolation, including Windows paths with spaces.
-  const cli =
-    npmArgs ||
-    path.join(
-      path.dirname(process.execPath),
-      "node_modules/npm/bin/npm-cli.js",
-    );
-  const result = fs.existsSync(cli)
-    ? spawnSync(process.execPath, [cli, ...args], {
-        stdio: "inherit",
-        cwd: root,
-      })
-    : spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", args, {
-        stdio: "inherit",
-        cwd: root,
-        shell: process.platform === "win32",
-      });
-  if (result.status !== 0) {
+  const result = spawnSync(process.execPath, [npmCli(), ...args], {
+    stdio: "inherit",
+    cwd: root,
+  });
+  if (result.error || result.status !== 0) {
     console.error(
       `运行 npm ${args.join(" ")} 失败。请检查网络和 Node.js 安装。`,
     );
     process.exit(1);
   }
 }
+try { cli = ensureDshPlugin(cli); }
+catch (error) { console.error(error.message); process.exit(1); }
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const requiredPackages = ["vite", ...Object.keys(manifest.dependencies)];
 if (requiredPackages.some(name => !fs.existsSync(path.join(root, "node_modules", name, "package.json")))) {
@@ -108,9 +115,27 @@ if (
   console.log("准备本地网页…");
   npm(["run", "build"]);
 }
-let cli;
-try { cli = ensureDshPlugin(); } catch (error) { console.error(error.message); process.exit(1); }
-const child = spawn(process.execPath, [cli, "web", ...(quiet ? ["--no-open"] : [])], {
+// Recheck after setup: another launch may have started DSH in the meantime.
+try { if (existingDsh !== "running") existingDsh = await dshState(); }
+catch (error) { console.error(error.message); process.exit(1); }
+if (existingDsh === "running") {
+  for (let n = 0; n < 20; n++) {
+    try {
+      const response = await fetch(url + "/api/health", { signal: AbortSignal.timeout(500) });
+      const health = response.ok ? await response.json() : null;
+      if (health?.app === "whereto" && health.engine === "dsh-agent") {
+        await printAddresses();
+        openBrowser();
+        process.exit(0);
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  console.error(`DSH Web 已在运行：${dshUrl}。漫游插件已注册，但地图尚未就绪；请在原服务中检查插件加载状态，必要时重启该服务。未启动第二个 DSH。`);
+  process.exit(1);
+}
+// DSH prints its authenticated login URL; only the map opens automatically.
+const child = spawn(process.execPath, [cli, "web", "--no-open", ...(process.env.DSH_WEB_PORT ? ["--port", String(new URL(dshUrl).port)] : [])], {
   stdio: "inherit",
   cwd: root,
   env: { ...process.env, WHERETO_PORT: String(port) },
@@ -124,13 +149,15 @@ for (const signal of ["SIGINT", "SIGTERM"])
       child.kill(signal);
     }
   });
-child.on("exit", (code) => process.exit(code || 0));
+child.on("error", error => { console.error(`DSH 启动失败：${error.message}`); process.exit(1); });
+child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 for (let n = 0; n < 40; n++) {
   try {
     const r = await fetch(url + "/api/health", {
       signal: AbortSignal.timeout(500),
     });
     if (r.ok && (await r.json()).app === "whereto") {
+      await printAddresses();
       console.log("关闭此窗口或按 Ctrl+C 可停止服务。");
       openBrowser();
       break;

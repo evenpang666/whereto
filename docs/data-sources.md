@@ -14,7 +14,7 @@
 | `imageKind: ai-illustration` | 为当前景点单独生成的 AI 印象图，非现场照片；本地预置，浏览 $0。 |
 | `imageKind: illustration` | 本地类别景观示意，非该景点实景外观。 |
 | `detail.kind: dsh-agent` | 宿主 DSH Agent 生成的解读，包含会话、模型、时间、用量、来源和轨迹，不保证史实无误；旧缓存可能仍为 ai。 |
-| `prose` | 景点散文邀约；本地类别文案或用户主动生成的 AI 文案，是旅行意境表达。 |
+| `prose` | 由 DSH Web 会话根据景点资料撰写的散文邀约，用户主动生成并缓存；属于旅行意境表达。 |
 | `feedback` | 体验推测，单独分栏，不冒充真实口碑；本地卡片提供按类型编写的建议。 |
 | `realReviews` | DSH Agent 会话中工具返回的亲历原文摘录，带平台与原文链接；reviewUrls 映射工具来源，reviewExcerpts 必须逐字匹配网页工具原文。无可核验摘录则省略。未核验发帖者身份，也不代表整体游客口碑。 |
 | `weather` | Open-Meteo 当前模型天气与当日预报，按景点或城市参考坐标请求。独立更新，不使用 AI 推测或解读缓存。 |
