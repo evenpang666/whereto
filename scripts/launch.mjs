@@ -14,6 +14,12 @@ try { dshUrl = await discoverDshWeb(process.env, { directory: root }); }
 catch (error) { console.error(error.message); process.exit(1); }
 const url = dshUrl + "/whereto";
 let instanceId, appUrl;
+// Environment validation must also run before returning an already-ready map.
+try {
+  const state = await probeDshWeb(dshUrl);
+  if (state === "occupied") throw Error(`${dshUrl} 已被其他服务占用，未启动 DSH。请检查端口。`);
+  cli = ensureDshPlugin(prepareRuntime());
+} catch (error) { console.error(error.message); process.exit(1); }
 function openBrowser() {
   if (quiet) return;
   const handoff = new URL(studioLaunchUrl(root, dshUrl, instanceId));
@@ -70,7 +76,6 @@ let existingDsh;
 try {
   existingDsh = await dshState();
   if (existingDsh === "running") console.log(`DSH Web 已在运行，将复用：${dshUrl}`);
-  cli = prepareRuntime();
 } catch (error) { console.error(error.message); process.exit(1); }
 function npm(args) {
   // Resolve npm's CLI without shell interpolation, including Windows paths with spaces.
@@ -85,8 +90,6 @@ function npm(args) {
     process.exit(1);
   }
 }
-try { cli = ensureDshPlugin(cli); }
-catch (error) { console.error(error.message); process.exit(1); }
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const requiredPackages = ["vite", ...Object.keys(manifest.dependencies)];
 if (requiredPackages.some(name => !fs.existsSync(path.join(root, "node_modules", name, "package.json")))) {

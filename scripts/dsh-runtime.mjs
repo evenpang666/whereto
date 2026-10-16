@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { registrationCurrent, rememberRegistration } from "./dsh-version.mjs";
 export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const runtimeRoot = path.join(projectRoot, ".local/runtime");
 function isFile(file) {
@@ -69,15 +70,21 @@ export function ensureDshPlugin(cli = dshCli()) {
   const configuredHome = process.env.DSH_HOME?.trim();
   const dshHome = configuredHome ? configuredHome.replace(/^~(?=$|[/\\])/, os.homedir()) : path.join(os.homedir(), ".dsh");
   const manifestPath = path.join(dshHome, "profiles/web/package.json");
+  const probe = spawnSync(process.execPath, [cli, "--version"], { encoding: "utf8", env: process.env, windowsHide: true, timeout: 15000 });
+  if (probe.error || probe.status !== 0) throw Error("无法检查 DSH 插件注册版本。");
+  const version = probe.stdout.trim();
   let manifest;
   try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); } catch (error) { if (error.code !== "ENOENT") throw error; }
   const link = `link:${projectRoot.replaceAll("\\", "/")}`;
   const installedLink = manifest?.dependencies?.["dsh-whereto"];
   const samePath = installedLink?.startsWith("link:") && path.resolve(path.dirname(manifestPath), installedLink.slice(5)).toLowerCase() === projectRoot.toLowerCase();
-  if (!samePath || !manifest?.dsh?.profile?.bundles?.includes("dsh-whereto")) {
+  if (!samePath || !manifest?.dsh?.profile?.bundles?.includes("dsh-whereto") || !registrationCurrent(path.dirname(manifestPath), "dsh-whereto", version)) {
     console.log("将漫游业务插件注册到现有 DSH Web profile…");
     const install = spawnSync(process.execPath, [cli, "plugin", "--profile", "web", "add", link], { cwd: projectRoot, stdio: "inherit", windowsHide: true });
     if (install.status !== 0) throw Error("DSH 插件安装失败，请检查 DSH 和 pnpm 安装。");
+    const updated = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    if (!updated.dsh?.profile?.bundles?.includes("dsh-whereto") || fs.realpathSync(path.join(path.dirname(manifestPath), "node_modules/dsh-whereto")) !== fs.realpathSync(projectRoot)) throw Error("DSH 未完成漫游 bundle 注册。");
+    rememberRegistration(path.dirname(manifestPath), "dsh-whereto", version);
   }
   return cli;
 }

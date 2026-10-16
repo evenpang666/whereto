@@ -13,11 +13,14 @@ function fixture({ installed="0.2.0-rc.2", pnpm=true }={}) {
   }};
   return {calls,env,options};
 }
-test("checks installed tools only, preserving PATH and any installed DSH version",()=>{
-  for(const installed of ["0.1.5-rc.1","0.2.0-rc.2"]){const f=fixture({installed});assert.equal(prepareRuntime(f.options),"/existing-dsh.mjs");assert.equal(f.env.PATH,"/existing-bin");}
+test("compatible DSH versions are reused without network or PATH changes",()=>{
+  for(const installed of ["0.2.0-rc.2","0.2.0","0.3.0"]){const f=fixture({installed});assert.equal(prepareRuntime(f.options),"/existing-dsh.mjs");assert.equal(f.env.PATH,"/existing-bin");}
 });
-test("missing DSH or pnpm stops with guidance instead of downloading or upgrading",()=>{
-  assert.throws(()=>prepareRuntime(fixture({installed:null}).options),/不会自动安装或升级/);
+test("missing or outdated DSH is upgraded before use; missing pnpm still gives guidance",()=>{
+  for (const installed of [null,"0.1.5-rc.1","0.2.0-rc.1"]) {
+    const f=fixture({installed});let upgraded=false;
+    assert.equal(prepareRuntime({...f.options,upgrade(options){assert.equal(options.version,installed||undefined);upgraded=true;return {cli:"/upgraded.mjs",version:"0.2.0-rc.2"};}}),"/upgraded.mjs");assert.equal(upgraded,true);
+  }
   assert.throws(()=>prepareRuntime(fixture({pnpm:false}).options),/不会另装 pnpm 10/);
 });
 test("unsupported Node stops before npm or filesystem changes",()=>{

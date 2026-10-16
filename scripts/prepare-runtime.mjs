@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dshCli, npmCli, projectRoot, runtimeRoot } from "./dsh-runtime.mjs";
+import { ensureDshVersion } from "./dsh-version.mjs";
 
 const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/;
 export function compareVersions(left, right) {
@@ -26,7 +27,7 @@ export function compareVersions(left, right) {
 
 export function prepareRuntime({ env = process.env, execPath = process.execPath,
   nodeVersion = process.versions.node, run = spawnSync, locate = dshCli,
-  resolveNpm = npmCli, directory = runtimeRoot, log = console.log } = {}) {
+  resolveNpm = npmCli, directory = runtimeRoot, upgrade = ensureDshVersion, log = console.log } = {}) {
   log(`检查启动环境：Node.js ${nodeVersion} · ${process.platform}/${process.arch}`);
   if (Number(nodeVersion.split(".")[0]) < 22) throw Error("需要 Node.js 22 或更新版本，请安装后重试：https://nodejs.org/");
   const npm = resolveNpm({ env, execPath });
@@ -35,10 +36,12 @@ export function prepareRuntime({ env = process.env, execPath = process.execPath,
   log(`npm ${npmVersion.stdout.trim()}`);
   let cli;
   try { cli = locate({ env, execPath, run, directory }); }
-  catch (error) { throw Error(`未找到已安装的 DSH：${error.message}。启动器不会自动安装或升级 DSH。`); }
-  const detected = run(execPath, [cli, "--version"], { cwd: projectRoot, env, encoding: "utf8", windowsHide: true, timeout: 15000 });
-  if (detected.error || detected.status !== 0 || !versionPattern.test(detected.stdout?.trim() || "")) throw Error("已安装的 DSH 无法运行，请检查其入口和 Node 环境；不会自动下载其他版本。");
-  log(`复用 DSH ${detected.stdout.trim()}：${cli}`);
+  catch (error) { if (env.DSH_CLI || env.DSH_BIN) throw error; }
+  const detected = cli ? run(execPath, [cli, "--version"], { cwd: projectRoot, env, encoding: "utf8", windowsHide: true, timeout: 15000 }) : null;
+  if (cli && (detected.error || detected.status !== 0 || !versionPattern.test(detected.stdout?.trim() || ""))) throw Error("已安装的 DSH 无法运行，请检查其入口和 Node 环境。");
+  const checked = upgrade({ cli, version: detected?.stdout?.trim(), npm, env, run, log });
+  cli = checked.cli;
+  log(`复用 DSH ${checked.version}：${cli}`);
   const pnpm = run(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["--version"], {
     env, encoding: "utf8", windowsHide: true, timeout: 15000, shell: process.platform === "win32",
   });

@@ -37,6 +37,21 @@ function fixture(t) {
   return { dir, write, directory: path.join(dir, "runtime"), env: { PATH: path.join(dir, "bin") }, execPath: path.join(dir, "node") };
 }
 
+function fakeDsh(f) {
+  return f.write('fake-dsh.mjs', `import fs from 'node:fs'; import path from 'node:path';
+if (process.argv.includes('--version')) console.log('99.0.0');
+else {
+  fs.writeFileSync(process.env.WHERETO_TEST_ARGS, JSON.stringify(process.argv.slice(2)));
+  if (process.argv.includes('plugin')) {
+    const profile=path.join(process.env.DSH_HOME,'profiles/web');
+    fs.mkdirSync(path.join(profile,'node_modules'),{recursive:true});
+    fs.writeFileSync(path.join(profile,'package.json'),JSON.stringify({dependencies:{'dsh-whereto':${JSON.stringify(`link:${projectRoot.replaceAll('\\', '/')}`)}},dsh:{profile:{bundles:['dsh-whereto']}}}));
+    const link=path.join(profile,'node_modules/dsh-whereto');
+    if(!fs.existsSync(link))fs.symlinkSync(${JSON.stringify(projectRoot)},link,'junction');
+  }
+}`);
+}
+
 test("finds a Unix PATH symlink with a custom npm prefix", { skip: process.platform === "win32" }, t => {
   const f = fixture(t);
   const cli = f.write("custom prefix/lib/node_modules/@deepseek-ai/dsh/lib/bin.js", "#!/usr/bin/env node\n");
@@ -94,7 +109,7 @@ test("missing DSH gives PATH and explicit-entry recovery instructions", t => {
 
 test("launcher always suppresses the DSH browser, including the default launch", async t => {
   const f = fixture(t);
-  const cli = f.write("fake-dsh.mjs", 'import fs from "node:fs";\nif(process.argv.includes("--version")) console.log("99.0.0"); else fs.writeFileSync(process.env.WHERETO_TEST_ARGS, JSON.stringify(process.argv.slice(2)));\n');
+  const cli = fakeDsh(f);
   const npm = f.write("fake-npm.cjs", 'console.log(process.argv.includes("view") ? JSON.stringify("99.0.0") : "10.0.0");\n');
   const pnpm = f.write("bin/pnpm", '#!/bin/sh\nprintf "10.0.0\\n"\n');
   fs.chmodSync(pnpm, 0o755);
@@ -126,18 +141,16 @@ test("DSH detection recognizes authenticated Web surfaces without treating unrel
   assert.throws(() => dshWebAddress({ DSH_WEB_PORT: "invalid" }), /DSH_WEB_PORT/);
 });
 
-test("a ready map reuses its host before requiring any local DSH or npm installation", async t => {
+test("a ready map still validates the local runtime before reusing its host", async t => {
   const f = fixture(t);
   const map = await serverAt(t, (req, res) => {
+    if(req.url==='/'){res.writeHead(401);res.end('dsh web authentication required');return;}
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify(req.url === "/whereto/api/health" ? { app: "whereto", engine: "dsh-agent" } : { dshWebUrl: "http://127.0.0.1:3199" }));
   });
-  const result = await runFile(process.execPath, [path.join(projectRoot, "scripts/launch.mjs"), "--no-open"], {
+  await assert.rejects(runFile(process.execPath, [path.join(projectRoot, "scripts/launch.mjs"), "--no-open"], {
     env: { ...process.env, DSH_WEB_PORT: String(map.port), DSH_CLI: path.join(f.dir, "missing-dsh.mjs"), npm_execpath: path.join(f.dir, "missing-npm.mjs") }, timeout: 15000,
-  });
-  assert.match(result.stdout, /复用现有 DSH 服务/);
-  assert.match(result.stdout, /DSH Web：http:\/\/127\.0\.0\.1:3199/);
-  assert.ok(!result.stdout.includes("检查启动环境"));
+  }), error => { assert.match(error.stderr, /DSH_CLI/); assert.match(error.stdout, /检查启动环境/); return true; });
 });
 
 test("an existing DSH host never launches another Web process, including when its plugin needs a restart", async t => {
@@ -148,7 +161,7 @@ test("an existing DSH host never launches another Web process, including when it
     if (canLoad && req.url === "/whereto/api/health" && fs.existsSync(calls)) { res.end(JSON.stringify({ app: "whereto", engine: "dsh-agent" })); return; }
     res.writeHead(404); res.end();
   });
-  const cli = f.write("fake-dsh.mjs", 'import fs from "node:fs"; if(process.argv.includes("--version")) console.log("99.0.0"); else fs.writeFileSync(process.env.WHERETO_TEST_ARGS, JSON.stringify(process.argv.slice(2)));');
+  const cli = fakeDsh(f);
   const npm = f.write("fake-npm.cjs", 'console.log(process.argv.includes("view") ? JSON.stringify("99.0.0") : "10.0.0");');
   const pnpm = f.write("bin/pnpm", '#!/bin/sh\nprintf "10.0.0\\n"\n'); fs.chmodSync(pnpm, 0o755);
   f.write("bin/pnpm.cmd", "@echo 10.0.0\r\n");
@@ -158,7 +171,7 @@ test("an existing DSH host never launches another Web process, including when it
   });
   if (canLoad) {
     const result = await launch();
-    assert.match(result.stdout, /DSH Web 已在运行，将复用/);
+    assert.match(result.stdout, /复用现有 DSH 服务/);
     assert.match(result.stdout, /漫游地图：http/);
   } else await assert.rejects(launch(), error => {
     assert.equal(error.code, 1);
@@ -186,7 +199,8 @@ test("an unrelated server on the DSH port stops startup before changing the envi
 });
 
 test("PATH DSH takes precedence over an existing private runtime",t=>{
-  const f=fixture(t);const cli=f.write("shared/lib/bin.js","#!/usr/bin/env node\n");f.write("runtime/node_modules/@deepseek-ai/dsh/lib/bin.js","old private runtime");fs.mkdirSync(f.env.PATH,{recursive:true});fs.symlinkSync(cli,path.join(f.env.PATH,"dsh"));
+  const f=fixture(t);const cli=f.write(process.platform==='win32'?"bin/node_modules/@deepseek-ai/dsh/lib/bin.js":"shared/lib/bin.js","#!/usr/bin/env node\n");f.write("runtime/node_modules/@deepseek-ai/dsh/lib/bin.js","old private runtime");fs.mkdirSync(f.env.PATH,{recursive:true});
+  if(process.platform==='win32')f.write('bin/dsh.cmd','@echo off\r\n');else fs.symlinkSync(cli,path.join(f.env.PATH,"dsh"));
   assert.equal(dshCli({...f,run:()=>assert.fail("no npm query")}),cli);
 });
 
