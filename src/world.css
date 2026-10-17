@@ -1,0 +1,37 @@
+.mode-switch { display: inline-flex; align-self: flex-end; padding: 4px; gap: 3px; border: 1px solid #d9ddcd; background: #ecefe3; border-radius: 30px; }
+.mode-switch button { padding: 8px 24px; border-radius: 24px; font-size: 13px; color: #748363; }
+.mode-switch button[aria-pressed="true"] { background: #657a51; color: #fffdf5; box-shadow: 0 2px 6px #52674320; }
+.intro-side .mode-switch { margin-bottom: 10px; }
+.world-navigation { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 24px; padding: 10px 0 0; border-top: 1px solid #dde2d1; }
+.world-navigation label { display: flex; flex-direction: column; gap: 5px; flex: 1 1 130px; font-size: 10px; color: #768268; }
+.world-navigation select { width: 100%; min-width: 0; max-width: 100%; border: 1px solid #d7ddcb; border-radius: 7px; background: #f9f9f1; color: #535f46; padding: 8px; font: inherit; font-size: 12px; }
+.world-navigation p { width: 100%; margin: 0; font-size: 11px; color: #7a826f; line-height: 1.7; }
+.world-map-status { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: #fffdf3ed; padding: 9px 14px; border-radius: 8px; color: #667653; font-size: 12px; }
+.world-map-status button { text-decoration: underline; margin-left: 8px; }
+.world-country-label { cursor: pointer; fill: #687659; font-size: 11px; }
+.world-country-label text { paint-order: stroke; stroke: #f3f5e7; stroke-width: 2px; stroke-linejoin: round; }
+.world-country-label:hover { fill: #354c29; }
+.world-map .city-region { cursor: pointer; }
+.world-map .city-region:hover { fill: #b8c4a1; }
+.world-map .city-selected { fill: #a4b58c; }
+.world-coverage { color: #878574; font-size: 12px; line-height: 1.8; margin: 10px 0 18px; }
+.world-empty { padding: 20px 0; color: #7c806b; font-size: 13px; }
+.region-chips { max-height: 240px; overflow: auto; padding: 4px 2px; }
+.region-chips small { font-size: 10px; opacity: .6; margin-left: 5px; }
+.map-topline .breadcrumbs { flex-wrap: wrap; white-space: normal; min-width: 0; }
+@media (max-width: 850px) {
+ .intro-side { display: flex; }
+ .intro-side .handwritten, .intro-side .intro-note { display: none; }
+ .intro-side .mode-switch { margin-bottom: 0; }
+ .intro { align-items: center; }
+}
+@media (max-width: 560px) {
+ .intro { position: relative; padding-top: 25px; }
+ .intro-side { position: absolute; top: 16px; right: 0; }
+ .mode-switch button { padding: 6px 15px; font-size: 12px; }
+ .intro .eyebrow { padding-top: 28px; }
+ .world-navigation { margin: 0 16px; gap: 8px; }
+ .world-navigation label { flex: 1 1 105px; }
+ .world-country-label { font-size: 12px; }
+ .world-map.map-canvas { min-height: 310px; }
+}

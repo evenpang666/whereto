@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LocalStore } from "./store.mjs";
+import { mergeCatalogs } from "../shared/catalog.mjs";
 import { selectLan, allowedHost, allowedClient, isLoopback, isLocalHost } from "./network.mjs";
 import { emptyState, normalizeState, matchText, prepareMatch, matchVisited } from "./visited.mjs";
 import { createWeatherService } from "./weather.mjs";
@@ -24,6 +25,7 @@ const mime = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".woff2": "font/woff2",
 };
@@ -35,9 +37,8 @@ export async function createApp({
   basePath: mountPath = "", connection: hostConnection = null, webServer: hostServer = null, instanceId, independent,
 } = {}) {
   const store = new LocalStore(dataDir);
-  const catalog = JSON.parse(
-    await fs.readFile(path.join(root, "public/data/catalog.json"), "utf8"),
-  );
+  const [china, world, chinaMap] = await Promise.all(["catalog.json", "world-catalog.json", "maps/100000.json"].map(file => fs.readFile(path.join(root, "public/data", file), "utf8").then(JSON.parse)));
+  const catalog = mergeCatalogs(china, world, chinaMap);
   const placeMap = new Map(catalog.places.map((p) => [p.id, p]));
   const inflight = new Set();
   let generation = null, generationAbort = null;
@@ -300,7 +301,7 @@ export async function createApp({
     }
   };
   const server = http.createServer(handler);
-  return { server, handler, store, lan, cancelGeneration: () => generationAbort?.abort() };
+  return { server, handler, store, lan, catalog, cancelGeneration: () => generationAbort?.abort() };
 }
 if (
   process.argv[1] &&

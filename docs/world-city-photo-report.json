@@ -1,0 +1,58 @@
+{
+  "updated": "2026-10-17",
+  "requested": 966,
+  "photos": 959,
+  "failures": [
+    {
+      "cityId": "world-city-1159117991",
+      "name": "Evinayong",
+      "countryId": "GNQ",
+      "qid": "Q1988320",
+      "reason": "no-qualified-photo"
+    },
+    {
+      "cityId": "world-city-1159118993",
+      "name": "Mansa Konko",
+      "countryId": "GMB",
+      "qid": "Q972281",
+      "reason": "no-qualified-photo"
+    },
+    {
+      "cityId": "world-city-1159150031",
+      "name": "Kayes",
+      "countryId": "COG",
+      "qid": "Q6271177",
+      "reason": "no-qualified-photo"
+    },
+    {
+      "cityId": "world-city-1159121345",
+      "name": "Ngozi",
+      "countryId": "BDI",
+      "qid": "Q929689",
+      "reason": "no-qualified-photo"
+    },
+    {
+      "cityId": "world-city-1159137533",
+      "name": "Nakhodka",
+      "countryId": "RUS",
+      "qid": "Q2626420",
+      "reason": "no-qualified-photo"
+    },
+    {
+      "cityId": "world-city-1159139429",
+      "name": "Mbaïki",
+      "countryId": "CAF",
+      "qid": "Q593435",
+      "reason": "no-qualified-photo"
+    },
+    {
+      "cityId": "world-city-1159127175",
+      "name": "Corriverton",
+      "countryId": "GUY",
+      "qid": "Q1018369",
+      "reason": "no-qualified-photo"
+    }
+  ],
+  "remainingIllustrations": 0,
+  "unavailablePhotos": 7
+}

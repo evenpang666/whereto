@@ -1,0 +1,46 @@
+{
+  "updated": "2026-10-17",
+  "places": 1239,
+  "landmarks": 168,
+  "cityWalks": 1071,
+  "cityPhotographs": 959,
+  "localRasterPhotos": 1232,
+  "illustrations": [],
+  "unavailable": [
+    {
+      "id": "world-city-1159117991-walk",
+      "name": "Evinayong城市漫步",
+      "country": "赤道几内亚"
+    },
+    {
+      "id": "world-city-1159118993-walk",
+      "name": "Mansa Konko城市漫步",
+      "country": "冈比亚"
+    },
+    {
+      "id": "world-city-1159150031-walk",
+      "name": "Kayes城市漫步",
+      "country": "刚果共和国"
+    },
+    {
+      "id": "world-city-1159121345-walk",
+      "name": "Ngozi城市漫步",
+      "country": "布隆迪"
+    },
+    {
+      "id": "world-city-1159137533-walk",
+      "name": "Nakhodka城市漫步",
+      "country": "俄罗斯"
+    },
+    {
+      "id": "world-city-1159139429-walk",
+      "name": "Mbaïki城市漫步",
+      "country": "中非共和国"
+    },
+    {
+      "id": "world-city-1159127175-walk",
+      "name": "Corriverton城市漫步",
+      "country": "圭亚那"
+    }
+  ]
+}

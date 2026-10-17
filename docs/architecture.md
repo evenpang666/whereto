@@ -44,3 +44,9 @@ GET /whereto/api/generation 返回当前任务的会话 ID 与工具进度。前
 `.local/state.json` 保存收藏、去过、最近探索；details.json 保存卡片；visited-matches.json 保存最近 100 份匹配缓存；usage.json 保存已报告 tokens；config.json 只需会话偏好。LocalStore 采用串行原子更新，仍不支持多个服务同时写同一目录。
 
 天气通过固定 Open-Meteo 免费接口，按景点独立缓存 15 分钟，并拒绝过期数据；与 DSH 生成缓存分离。地图、图片、天气主题、散文样式、收藏与去过界面保持现有实现。独立运行 server/index.mjs 只提供离线探索，生成明确要求加载 DSH 插件，不会回退直接调用 API。
+
+## 中国与世界模式
+
+前后端通过 `shared/catalog.mjs` 合并目录。中国原有 `provinceId`、`cityId`、景点 ID 不变；补充 `countryId: CHN`、`regionId`，世界条目使用独立 ID。世界区划通过 `countryId` 关联，城市与景点均保留 `regionId`。国家配置决定是否展示区划层及其本地名称。
+
+模式偏好仅存浏览器 `localStorage`；收藏、去过和最近探索仍共用主机 `.local/state.json`，无需迁移或复制记录。跨模式打开收藏可自动进入对应国家、区划和城市。世界模式中国地图复用中国省级边界；省份仍沿用中国城市数据。世界地图与数据保存在 `public/data`，分国边界按需加载；无城市数据的区划显示空状态。

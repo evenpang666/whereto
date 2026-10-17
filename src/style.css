@@ -88,6 +88,26 @@ h3,
 p {
   margin: 0;
 }
+.photo-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #e4e7dc;
+  color: #64705c;
+  font-size: 11px;
+  text-align: center;
+  padding: 10px;
+}
+.scope-card > .photo-unavailable { width: 70px; height: 62px; flex: 0 0 70px; border-radius: 6px; }
+.detail-visual > .photo-unavailable { position: absolute; inset: 0; }
+.collection-open > .photo-unavailable { width: 75px; height: 70px; flex: 0 0 75px; border-radius: 8px; }
+.visited-card-open > .photo-unavailable { width: 68px; height: 64px; flex: 0 0 68px; border-radius: 9px; }
+@media (max-width: 600px) {
+  .collection-open > .photo-unavailable { width: 62px; height: 65px; flex-basis: 62px; }
+  .visited-card-open > .photo-unavailable { width: 52px; height: 58px; flex-basis: 52px; }
+}
 img {
   display: block;
   max-width: 100%;

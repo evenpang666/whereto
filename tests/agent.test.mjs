@@ -43,6 +43,7 @@ test("whole-project plugin mounts authenticated UI on the DSH listener and clean
     assert.equal((await fetch(base + '/api/state', {headers:{...auth.headers,Origin:'https://evil.example'}})).status,403);
     const html = await (await fetch(base + '/', auth)).text(); assert.match(html,/\/whereto\/assets\//);
     assert.equal((await fetch(base + '/data/catalog.json',auth)).status,200);
+    assert.equal(tools.find(t => t.name === "whereto_read_place").execute({ id: "world-q243" }).countryId, "FRA");
     assert.ok(tools.some(t => t.name === "whereto_read_place")); assert.ok(skills.some(s => s.name === "whereto-travel-guide"));
     await fiber.dispose(); assert.equal(handler,null); assert.equal(server.listening,true); assert.equal(app.server.listening,false);
   } finally { await ctx.fiber.dispose(); await new Promise(resolve=>server.close(resolve)); await cleanup(dir); }

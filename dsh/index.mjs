@@ -17,7 +17,7 @@ export async function apply(ctx, config = {}) {
   const app = await createApp({ independent, agentBackend, basePath, instanceId, connection: ctx.connection, webServer: ctx.webServer, dataDir: config.dataDir ? path.resolve(config.dataDir) : path.join(root, ".local"), ...(config.lan === false ? { lan: null } : {}) });
   ctx.effect(() => async () => { app.cancelGeneration(); await closeIndependent(app.server); agentBackend.dispose(); });
   independent.port = await listenIndependent(app.server, config.port ?? process.env.WHERETO_PORT ?? 3101);
-  const catalog = JSON.parse(await fs.readFile(path.join(root, "public/data/catalog.json"), "utf8"));
+  const catalog = app.catalog;
   const output = { schema: { type: "object" }, render: (_args, value) => [{ type: "text", text: JSON.stringify(value) }] };
   ctx.tools.register({ name: "whereto_read_place", description: "读取漫游地图中指定景点的本地资料与来源，不修改收藏或去过状态。",
     parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false }, output,

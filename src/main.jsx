@@ -1,4 +1,5 @@
 import { assetUrl } from "./urls.js";
+import { PlaceImage, imageLabel } from "./PlaceImage.jsx";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { geoMercator, geoPath, geoArea } from "d3-geo";
@@ -39,6 +40,10 @@ import { usePlaceWeather, WeatherOpening, WeatherScene, localInspiration, review
 import "./style.css";
 import "./polish.css";
 import "./features.css";
+import "./world.css";
+import { WorldMap } from "./WorldMap.jsx";
+import { normalizeMap } from "./geography.js";
+import { mergeCatalogs, scopedPlaces, searchCatalog, placeLocation } from "../shared/catalog.mjs";
 
 const money = (n) => `$${Number(n || 0).toFixed(4)}`;
 async function api(url, options = {}) {
@@ -64,26 +69,7 @@ const categories = [
   ["海岸漫游", Waves],
   ["城市漫步", MapPin],
 ];
-function normalize(collection) {
-  return {
-    ...collection,
-    features: collection.features.map((f) => {
-      if (
-        !f.geometry ||
-        !["Polygon", "MultiPolygon"].includes(f.geometry.type) ||
-        geoArea(f) < Math.PI * 2
-      )
-        return f;
-      const coordinates =
-        f.geometry.type === "Polygon"
-          ? f.geometry.coordinates.map((r) => r.slice().reverse())
-          : f.geometry.coordinates.map((p) =>
-              p.map((r) => r.slice().reverse()),
-            );
-      return { ...f, geometry: { ...f.geometry, coordinates } };
-    }),
-  };
-}
+const normalize = normalizeMap;
 function Dialog({ title, children, onClose, wide = false, className = "" }) {
   const box = useRef(null),
     close = useRef(onClose);
@@ -521,28 +507,6 @@ function TravelMap({
     </div>
   );
 }
-function imageLabel(place, detailed = false) {
-  if (place.imageKind === "ai-illustration")
-    return detailed
-      ? "AI 生成印象图 · 非实景 · 预置浏览 $0"
-      : "AI 生成 · 浏览 $0";
-  if (place.imageKind === "illustration") return "景观示意 · 非实景";
-  return detailed ? "景点参考配图 · 非实时影像" : "景点参考图";
-}
-function PlaceImage({ place, ...props }) {
-  return (
-    <img
-      src={assetUrl(place.image)}
-      alt={`${place.name}，${imageLabel(place, true)}`}
-      {...props}
-      onError={(e) => {
-        e.currentTarget.onerror = null;
-        e.currentTarget.src = assetUrl(`/media/illustration-${place.category}.svg`);
-        e.currentTarget.alt = `${place.name}景观示意，非实景`;
-      }}
-    />
-  );
-}
 function Settings({ settings, onClose, ...props }) {
   return <Dialog title="DSH 会话设置" onClose={onClose}><DshSettings settings={settings} {...props} /></Dialog>;
 }
@@ -577,11 +541,12 @@ function Detail({
         <span className="image-tag">{place.category}</span>
       </div>
       <div className="detail-content">
-        <WeatherOpening {...weatherState} />
+        <WeatherOpening {...weatherState} place={place} />
         <div className="place-location">
           <MapPin size={13} />
-          {short(place.province)} · {short(place.city)}
+          {placeLocation(place)}
           {place.grade && <span className="grade">{place.grade}</span>}
+          {place.kind === "city-walk" && <span className="grade">城市探索入口</span>}
         </div>
         <h2>{place.name}</h2>
         {visited && <span className="visited-badge"><CheckCheck size={13} /> 已去过的风景</span>}
@@ -653,11 +618,16 @@ function Detail({
             <p>{d.tips}</p>
           </section>
         </div>
+        {place.regionNote && <p className="fine-print gateway-note">{place.regionNote}</p>}
+        {place.cityRelation === "gateway" && <p className="fine-print gateway-note">{place.city}为附近参考城市，距景点代表点约 {place.gatewayDistanceKm} 公里（直线距离，仅用于目录分组）；地图和天气使用景点坐标。</p>}
+        {place.cityRelation === "destination-area" && <p className="fine-print gateway-note">此条目按目的地周边区域分组，并非独立城市。</p>}
         <p className="fine-print coordinate-note">
-          {place.precision === "city-reference"
+          {place.kind === "city-walk" ? "这是城市探索入口，地图显示城市参考位置，并非独立景区。" : place.precision === "city-reference"
             ? "此景点尚未核实精确坐标，地图显示城市参考位置。"
             : "点位为景区参考坐标，不作为入口导航。"}
         </p>
+        {place.kind === "city-walk" && place.imageSource.note && <p className="fine-print">{place.imageSource.note}</p>}
+        {place.imageSource.author && <p className="photo-attribution">图片：{place.imageSource.author}{place.imageSource.date ? ` · ${place.imageSource.date}` : ""} · <a href={place.imageSource.url} target="_blank" rel="noreferrer">原始文件</a>{place.imageSource.license && <> · <a href={place.imageSource.licenseUrl || place.imageSource.url} target="_blank" rel="noreferrer">{place.imageSource.license}</a></>}{place.imageSource.sourcePage && <> · <a href={place.imageSource.sourcePage} target="_blank" rel="noreferrer">原始来源</a></>}{place.imageSource.attribution && <><br />署名补充：{place.imageSource.attribution}</>}</p>}
         <div className="source-links">
           {(detail?.sources || place.sources).map((s, i) => (
             <a key={i} href={s.url} target="_blank" rel="noreferrer">
@@ -722,11 +692,24 @@ function Detail({
   );
 }
 function App() {
-  const [catalog, setCatalog] = useState(null),
+  const [chinaCatalog, setChinaCatalog] = useState(null),
+    [worldData, setWorldData] = useState(null),
+    [worldMap, setWorldMap] = useState(null),
     [nation, setNation] = useState(null),
     [provinceMap, setProvinceMap] = useState(null),
     [province, setProvince] = useState(null),
     [city, setCity] = useState(null);
+  const [mode, setMode] = useState(() => {
+    try { return localStorage.getItem("whereto-map-mode") === "world" ? "world" : "china"; } catch { return "china"; }
+  });
+  const [country, setCountry] = useState(null), [region, setRegion] = useState(null);
+  const [countryBoundary, setCountryBoundary] = useState(null), [worldMapLoading, setWorldMapLoading] = useState(false),
+    [worldMapError, setWorldMapError] = useState(""), [mapRetry, setMapRetry] = useState(0);
+  const rollingTimer = useRef(null);
+  const catalog = useMemo(() => mergeCatalogs(chinaCatalog, worldData, nation), [chinaCatalog, worldData, nation]);
+  const chinaScope = useMemo(() => catalog && ({ ...catalog, cities: catalog.cities.filter(c => c.countryId === "CHN"), places: catalog.places.filter(p => p.countryId === "CHN") }), [catalog]);
+  useEffect(() => { try { localStorage.setItem("whereto-map-mode", mode); } catch {} }, [mode]);
+  useEffect(() => { clearTimeout(rollingTimer.current); setRolling(false); }, [mode, country?.id, region?.id, province?.properties.adcode, city?.id]);
   const [filter, setFilter] = useState("全部风景"),
     [search, setSearch] = useState(""),
     [activeSearch, setActiveSearch] = useState(false),
@@ -763,9 +746,13 @@ function App() {
       api("/settings"),
       api("/state"),
       api("/runtime"),
+      fetch(import.meta.env.BASE_URL + "data/world-catalog.json").then(r => { if (!r.ok) throw Error("世界目录加载失败"); return r.json(); }),
+      fetch(import.meta.env.BASE_URL + "data/maps/world.json").then(r => { if (!r.ok) throw Error("世界地图加载失败"); return r.json(); }),
     ])
-      .then(([c, n, s, st, rt]) => {
-        setCatalog(c);
+      .then(([c, n, s, st, rt, w, wm]) => {
+        setChinaCatalog(c);
+        setWorldData(w);
+        setWorldMap(wm);
         setNation(normalize(n));
         setSettings(s);
         setState(st);
@@ -775,7 +762,7 @@ function App() {
   };
   useEffect(() => {
     load();
-    return () => clearTimeout(noticeTimer.current);
+    return () => { clearTimeout(noticeTimer.current); clearTimeout(rollingTimer.current); };
   }, []);
   useEffect(() => {
     if (!province) {
@@ -797,47 +784,48 @@ function App() {
       });
     return () => controller.abort();
   }, [province?.properties.adcode]);
-  const places = useMemo(
-    () =>
-      catalog?.places.filter(
-        (p) =>
-          (!province || p.provinceId === String(province.properties.adcode)) &&
-          (!city || p.cityId === city.id) &&
-          (filter === "全部风景" || p.category === filter),
-      ) || [],
-    [catalog, province, city, filter],
-  );
-  const searchResults = useMemo(() => {
-    if (!catalog || !search.trim()) return [];
-    const term = search.trim().toLowerCase();
-    return [
-      ...catalog.cities
-        .filter((c) => c.name.includes(term) || c.province.includes(term))
-        .slice(0, 5)
-        .map((c) => ({ type: "city", value: c })),
-      ...catalog.places
-        .filter((p) =>
-          (p.name + p.city + p.province + (p.englishName || ""))
-            .toLowerCase()
-            .includes(term),
-        )
-        .slice(0, 6)
-        .map((p) => ({ type: "place", value: p })),
-    ];
-  }, [catalog, search]);
-  const featured = useMemo(
-    () => places.find((p) => p.name === "西湖风景名胜区") || places[0],
-    [places],
-  );
-  const selectProvince = (p) => {
-    setProvince(p);
-    setCity(null);
+  useEffect(() => {
+    setCountryBoundary(null); setWorldMapError(""); setWorldMapLoading(false);
+    if (mode !== "world" || !country) return;
+    if (country.id === "CHN") { setCountryBoundary({ id: country.id, data: nation }); return; }
+    if (!country.regionLabel) return;
+    const controller = new AbortController();
+    setWorldMapLoading(true);
+    fetch(`${import.meta.env.BASE_URL}data/maps/world/${country.id}.json`, { signal: controller.signal })
+      .then(r => { if (!r.ok) throw Error("当地地图未能加载。"); return r.json(); })
+      .then(data => { if (!controller.signal.aborted) setCountryBoundary({ id: country.id, data: normalize(data) }); })
+      .catch(e => { if (e.name !== "AbortError") setWorldMapError(e.message); })
+      .finally(() => { if (!controller.signal.aborted) setWorldMapLoading(false); });
+    return () => controller.abort();
+  }, [mode, country?.id, nation, mapRetry]);
+  const places = useMemo(() => scopedPlaces(catalog, { mode, province, country, region, city, filter }), [catalog, mode, province, country, region, city, filter]);
+  const searchResults = useMemo(() => searchCatalog(catalog, search, mode), [catalog, search, mode]);
+  const featured = useMemo(() => (mode === "china" ? places.find(p => p.name === "西湖风景名胜区") : places.find(p => p.kind === "landmark")) || places[0], [places, mode]);
+  const selectProvince = p => { setProvince(p); setCity(null); };
+  const selectCountry = c => { setCountry(c); setRegion(null); setCity(null); };
+  const selectRegion = r => { setRegion(r); setCity(null); };
+  const resetScope = () => { setProvince(null); setCountry(null); setRegion(null); setCity(null); };
+  const switchMode = next => {
+    if (mode === next) return;
+    ++reqId.current; setSelected(null); setDetail(null); setDetailLoading(false);
+    setMode(next); resetScope(); setSearch(""); setActiveSearch(false); setFilter("全部风景");
   };
-  const focusCity = (c) => {
-    setProvince(
-      nation.features.find((f) => String(f.properties.adcode) === c.provinceId),
-    );
+  const focusCity = c => {
+    if (!c) return;
+    if (mode === "world" || c.countryId !== "CHN") {
+      setMode("world"); setProvince(null);
+      setCountry(catalog.countries.find(n => n.id === c.countryId));
+      setRegion(catalog.regions.find(r => r.id === c.regionId && r.countryId === c.countryId) || null);
+    } else setProvince(nation.features.find(f => String(f.properties.adcode) === c.provinceId));
     setCity(c);
+  };
+  const chooseSearchResult = result => {
+    if (result.type === "country") selectCountry(result.value);
+    else if (result.type === "region") {
+      setCountry(catalog.countries.find(c => c.id === result.value.countryId)); selectRegion(result.value);
+    } else if (result.type === "city") focusCity(result.value);
+    else openPlace(result.value, true);
+    setActiveSearch(false); setSearch("");
   };
   async function openPlace(p, zoom = false) {
     if (zoom) focusCity(catalog.cities.find((c) => c.id === p.cityId));
@@ -925,7 +913,7 @@ function App() {
   const random = () => {
     if (rolling || !places.length) return;
     setRolling(true);
-    setTimeout(() => {
+    rollingTimer.current = setTimeout(() => {
       const groups = [...new Set(places.map((p) => p.cityId))];
       const pick = (arr) =>
         arr[crypto.getRandomValues(new Uint32Array(1))[0] % arr.length];
@@ -962,22 +950,19 @@ function App() {
   const history = state.history
     .map((id) => catalog.places.find((p) => p.id === id))
     .filter(Boolean);
-  const suggestions = [
-    "西湖风景名胜区",
-    "丽江古城景区",
-    "黄山风景区",
-    "故宫博物院",
-  ]
-    .map((n) => catalog.places.find((p) => p.name === n))
-    .filter(Boolean);
+  const suggestions = mode === "world"
+    ? ["world-q243", "world-q45178", "world-q9202", "world-q43473"].map(id => catalog.places.find(p => p.id === id)).filter(Boolean)
+    : ["西湖风景名胜区", "丽江古城景区", "黄山风景区", "故宫博物院"].map(n => catalog.places.find(p => p.name === n)).filter(Boolean);
+  const scopeCities = mode === "world" ? catalog.cities.filter(c => c.countryId === country?.id && (!region || c.regionId === region.id)) : [];
+  const scopeRegions = mode === "world" ? catalog.regions.filter(r => r.countryId === country?.id) : [];
+  const displayCatalog = mode === "china" ? chinaScope : catalog;
   return (
     <>
       <header className="site-header">
         <button
           className="brand"
           onClick={() => {
-            setProvince(null);
-            setCity(null);
+            resetScope();
             setFilter("全部风景");
           }}
           aria-label="漫游whereto 首页"
@@ -1050,6 +1035,10 @@ function App() {
             <p>不必急着决定去哪里，让好奇心先出发。</p>
           </div>
           <div className="intro-side">
+            <div className="mode-switch" role="group" aria-label="地图模式">
+              <button aria-pressed={mode === "china"} onClick={() => switchMode("china")}>中国</button>
+              <button aria-pressed={mode === "world"} onClick={() => switchMode("world")}>世界</button>
+            </div>
             <span className="handwritten">
               Somewhere, something wonderful
               <br />
@@ -1063,36 +1052,19 @@ function App() {
         <section className="explore-layout" aria-label="旅行探索">
           <div className="map-panel">
             <div className="map-topline">
-              <div className="breadcrumbs">
-                <button
-                  onClick={() => {
-                    setProvince(null);
-                    setCity(null);
-                  }}
-                >
-                  中国
-                </button>
-                {province && (
-                  <>
-                    <ChevronRight size={12} />
-                    <button onClick={() => setCity(null)}>
-                      {short(province.properties.name)}
-                    </button>
-                  </>
-                )}
-                {city && (
-                  <>
-                    <ChevronRight size={12} />
-                    <span>{short(city.name)}</span>
-                  </>
-                )}
-                <span className="scope-count">{places.length} 处风景</span>
+              <div className="breadcrumbs" aria-label="当前位置">
+                <button onClick={resetScope}>{mode === "world" ? "世界" : "中国"}</button>
+                {mode === "world" && country && <><ChevronRight size={12} /><button onClick={() => selectCountry(country)}>{country.name}</button></>}
+                {mode === "world" && region && <><ChevronRight size={12} /><button onClick={() => setCity(null)}>{region.name}</button></>}
+                {mode === "china" && province && <><ChevronRight size={12} /><button onClick={() => setCity(null)}>{short(province.properties.name)}</button></>}
+                {city && <><ChevronRight size={12} /><span>{mode === "world" ? city.name : short(city.name)}</span></>}
+                <span className="scope-count">{places.length} 处探索</span>
               </div>
               <div className="search-box">
                 <Search size={15} />
                 <input
-                  aria-label="搜索城市或景点"
-                  placeholder="找一座城，一处风景…"
+                  aria-label={mode === "world" ? "搜索国家、行政区、城市或景点" : "搜索城市或景点"}
+                  placeholder={mode === "world" ? "国家、城市、景点，中英文皆可…" : "找一座城，一处风景…"}
                   value={search}
                   onFocus={() => setActiveSearch(true)}
                   onBlur={() => setTimeout(() => setActiveSearch(false), 180)}
@@ -1104,11 +1076,7 @@ function App() {
                     if (e.key === "Escape") setActiveSearch(false);
                     if (e.key === "Enter" && searchResults[0]) {
                       const result = searchResults[0];
-                      result.type === "city"
-                        ? focusCity(result.value)
-                        : openPlace(result.value, true);
-                      setActiveSearch(false);
-                      setSearch("");
+                      chooseSearchResult(result);
                     }
                   }}
                 />
@@ -1132,15 +1100,11 @@ function App() {
                     ) : (
                       searchResults.map((r) => (
                         <button
-                          key={r.value.id}
+                          key={r.type + r.value.id}
                           className={r.type !== "city" && state.visited.includes(r.value.id) ? "visited-search-result" : ""}
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => {
-                            r.type === "city"
-                              ? focusCity(r.value)
-                              : openPlace(r.value, true);
-                            setSearch("");
-                            setActiveSearch(false);
+                            chooseSearchResult(r);
                           }}
                         >
                           <MapPin size={14} />
@@ -1148,9 +1112,7 @@ function App() {
                             {r.value.name}
                             {r.type !== "city" && state.visited.includes(r.value.id) ? " · 已去过" : ""}
                             <small>
-                              {r.type === "city"
-                                ? r.value.province
-                                : r.value.city}
+                              {r.type === "country" ? "国家／地区" : r.type === "region" ? catalog.countries.find(c => c.id === r.value.countryId)?.name : placeLocation(r.value)}
                             </small>
                           </span>
                           <ChevronRight size={13} />
@@ -1173,10 +1135,26 @@ function App() {
                 </button>
               ))}
             </div>
-            <TravelMap
+            {mode === "world" && <div className="world-navigation">
+              <label>国家／地区<select aria-label="选择国家或地区" value={country?.id || ""} onChange={e => selectCountry(catalog.countries.find(c => c.id === e.target.value) || null)}>
+                <option value="">整个世界</option>{catalog.countries.slice().sort((a,b) => a.name.localeCompare(b.name, "zh-CN")).map(c => <option key={c.id} value={c.id}>{c.name} · {c.englishName}</option>)}
+              </select></label>
+              {country?.regionLabel && <label>{country.regionLabel}<select aria-label={`选择${country.regionLabel}`} value={region?.id || ""} onChange={e => selectRegion(scopeRegions.find(r => r.id === e.target.value) || null)}>
+                <option value="">全部{country.regionLabel}</option>{scopeRegions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select></label>}
+              {country && <label>城市／目的地<select aria-label="选择城市" value={city?.id || ""} onChange={e => { const c = scopeCities.find(c => c.id === e.target.value); if (c) focusCity(c); else setCity(null); }}>
+                <option value="">{scopeCities.length ? "选择一座城市" : "此范围暂未收录城市"}</option>{scopeCities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select></label>}
+              <p>{country ? country.hierarchyNote : "国家 → 各国区划 → 城市 → 景点；城市国家可直接进入城市。"}</p>
+            </div>}
+            {mode === "world" ? <WorldMap world={worldMap} countryMap={countryBoundary && countryBoundary.id === country?.id ? countryBoundary.data : null}
+              catalog={catalog} country={country} region={region} city={city} places={places}
+              onCountry={selectCountry} onRegion={selectRegion} onCity={focusCity} onPlace={openPlace}
+              favorites={state.favorites} visited={state.visited} randomizing={rolling}
+              loading={worldMapLoading} error={worldMapError} onRetry={() => setMapRetry(v => v + 1)} /> : <TravelMap
               nation={nation}
               provinceMap={provinceMap}
-              catalog={catalog}
+              catalog={chinaScope}
               province={province}
               city={city}
               onProvince={selectProvince}
@@ -1188,10 +1166,10 @@ function App() {
               favorites={state.favorites}
               visited={state.visited}
               onMarkedPlace={p => openPlace(p, true)}
-            />
+            />}
             <div className="map-bottomline">
               <span>山河很大，慢慢去看。</span>
-              <small>地图：阿里云 DataV · 探索示意</small>
+              <small>{mode === "world" ? "地图：Natural Earth · 探索示意" : "地图：阿里云 DataV · 探索示意"}</small>
             </div>
           </div>
           <aside className="discovery">
@@ -1211,11 +1189,7 @@ function App() {
               <ArrowUpRight size={18} />
             </button>
             <p className="fine-print random-cost">
-              {city
-                ? short(city.name)
-                : province
-                  ? short(province.properties.name)
-                  : "中国境内"}
+              {city ? city.name : mode === "world" ? region?.name || country?.name || "世界范围" : province ? short(province.properties.name) : "中国境内"}
               随机探索 · 免费 · AI 解读按需生成
             </p>
             <button className="visited-entry" onClick={() => setPanel("visited")}>
@@ -1235,7 +1209,7 @@ function App() {
                   <div className="feature-kicker">
                     <span>
                       <MapPin size={12} />
-                      {short(featured.province)} · {short(featured.city)}
+                      {placeLocation(featured)}
                     </span>
                     <button
                       className={`heart-button ${state.favorites.includes(featured.id) ? "hearted" : ""}`}
@@ -1287,7 +1261,20 @@ function App() {
             </div>
           </aside>
         </section>
-        {province && (
+        {mode === "world" && <section className="scope-browser world-scope">
+          <div className="section-title"><div><span className="eyebrow">SLOW DOWN & EXPLORE</span>
+            <h2>{city ? `${city.name}，值得停留的地方` : region ? `从${region.name}的一座城开始` : country ? `${country.name}，下一程从这里开始` : "从一个国家开始，慢慢看世界。"}</h2></div></div>
+          <p className="world-coverage">{city ? "具体景点与城市漫步入口分别标注；照片提供来源与许可，示意图明确标识。" : "本地目录收录代表城市和部分地标；空白区表示尚未收录，仍可选择并查看地图。"}{country && !city ? " 国家及区划默认展示主要陆地，岛屿与海外地区可通过区划列表切换。" : ""}</p>
+          {!country ? <div className="city-chips">{["CHN","JPN","FRA","ITA","GBR","USA","AUS","SGP","THA","ZAF","BRA","EGY"].map(id => catalog.countries.find(c => c.id === id)).filter(Boolean).map(c => <button key={c.id} onClick={() => selectCountry(c)}>{c.name}<ArrowUpRight size={12} /></button>)}</div>
+            : city ? <div className="scope-cards">{places.map(p => <button key={p.id} className={`scope-card ${state.visited.includes(p.id) ? "is-visited" : ""}`} onClick={() => openPlace(p)}>
+                <PlaceImage place={p} loading="lazy" /><span><small>{p.kind === "city-walk" ? "城市探索入口" : p.category} · {imageLabel(p)}</small><strong>{p.name}</strong>{state.visited.includes(p.id) && <small>✓ 已去过</small>}</span><ArrowUpRight size={16} />
+              </button>)}{!places.length && <p>此筛选下暂无景点。试试“全部风景”。</p>}</div>
+            : <>{!region && country.regionLabel && <div className="city-chips region-chips">{scopeRegions.map(r => <button key={r.id} onClick={() => selectRegion(r)}>{r.name}<small>{catalog.cities.filter(c => c.countryId === country.id && c.regionId === r.id).length} 城市 · {catalog.places.filter(p => p.regionId === r.id && p.kind === "landmark").length} 景点</small><ArrowUpRight size={12} /></button>)}</div>}
+              {(region || !country.regionLabel) && <div className="city-chips">{scopeCities.map(c => <button key={c.id} onClick={() => focusCity(c)}>{c.name}<ArrowUpRight size={12} /></button>)}</div>}
+              {!scopeCities.length && <p className="world-empty">此范围暂未收录城市或景点。可返回上一级，或选择其他地区继续探索。</p>}
+            </>}
+        </section>}
+        {mode === "china" && province && (
           <section className="scope-browser">
             <div className="section-title">
               <span className="eyebrow">
@@ -1378,9 +1365,9 @@ function App() {
             漫游whereto · 跟着好奇心，慢慢看世界。
           </span>
           <span>
-            {catalog.cities.length} 座城市与地区
+            {displayCatalog.cities.length} 座城市与地区
             <span className="footer-dot">·</span>
-            {catalog.places.length} 处风景<span className="footer-dot">·</span>
+            {displayCatalog.places.length} 处探索<span className="footer-dot">·</span>
             本地优先
           </span>
         </footer>
@@ -1450,7 +1437,7 @@ function App() {
                   <PlaceImage place={p} />
                   <span>
                     <small>
-                      {short(p.province)} · {short(p.city)}
+                      {placeLocation(p)}
                     </small>
                     <strong>{p.name}</strong>
                     <span>

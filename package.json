@@ -10,10 +10,18 @@
     "./locale/*.json": "./locale/*.json"
   },
   "icon": "./public/brand/mark.svg",
-  "keywords": ["dsh-plugin", "deepseek-harness", "travel"],
-  "dsh": { "bundle": { "patch": "./dsh/cordis.patch.yml" } },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "travel"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./dsh/cordis.patch.yml"
+    }
+  },
   "type": "module",
-  "description": "中国地图探索、景点卡片、旅行解读与足迹记录，复用 DSH 模型、凭据与访问认证。",
+  "description": "中国与世界地图探索、景点卡片、旅行解读与足迹记录，复用 DSH 模型、凭据与访问认证。",
   "engines": {
     "node": ">=22"
   },
@@ -34,6 +42,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "geo-tz": "^8.1.10",
     "vite": "^6.1.0"
   }
 }

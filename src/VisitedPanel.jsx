@@ -1,4 +1,4 @@
-import { assetUrl } from "./urls.js";
+import { PlaceImage, imageLabel } from "./PlaceImage.jsx";
 import React, { useEffect, useRef, useState } from "react";
 import { CheckCheck, Loader2, Sparkles, ArrowUpRight, MapPin } from "lucide-react";
 import { AgentProgress } from "./AgentProgress.jsx";
@@ -43,7 +43,7 @@ export function VisitedPanel({ catalog, state, settings, api, matching, onBusy, 
       <label htmlFor="visited-record">写下去过的景点</label>
       <textarea id="visited-record" value={text} maxLength={12000} disabled={matching}
         onChange={e => { setText(e.target.value); setQuote(null); }}
-        placeholder="例如：去过杭州西湖、北京故宫和黄山。也可以粘贴一长段旅行记录；同名景点请带上城市。" rows={4} />
+        placeholder="例如：去过杭州西湖、巴黎埃菲尔铁塔和悉尼歌剧院。也可以粘贴一长段旅行记录；同名景点请带上国家或城市。" rows={4} />
       <p className="fine-print">DSH Agent 会把文字对应到库内景点并自动标记。想去、没去过及不能确定的名称不会标记；使用 DSH Web 配置的模型。</p>
       <button className="button primary" onClick={!settings.hasKey && !quote?.cached ? onSettings : match}
         disabled={matching || (!settings.hasKey && !quote?.cached ? false : !quote || quoting)}>
@@ -67,8 +67,8 @@ export function VisitedPanel({ catalog, state, settings, api, matching, onBusy, 
     <div className="visited-list">
       {list.map(p => <article key={p.id} className={state.visited.includes(p.id) ? "is-visited" : ""}>
         <button className="visited-card-open" onClick={() => onPlace(p)}>
-          <img src={assetUrl(p.image)} alt={p.name} loading="lazy" />
-          <span><small><MapPin size={11} /> {p.city}</small><strong>{p.name}</strong><small>{p.category}{p.imageKind === "ai-illustration" ? " · AI 印象图 · $0" : " · 参考配图"}</small></span>
+          <PlaceImage place={p} loading="lazy" />
+          <span><small><MapPin size={11} /> {p.city}</small><strong>{p.name}</strong><small>{p.category} · {imageLabel(p)}</small></span>
         </button>
         <button className="visited-toggle" aria-label={`${state.visited.includes(p.id) ? "撤销去过" : "标记去过"}${p.name}`}
           onClick={() => onVisited(p.id)}><CheckCheck size={17} />{state.visited.includes(p.id) ? "已去过 · 撤销" : "标记去过"}</button>

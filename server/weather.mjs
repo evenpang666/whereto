@@ -1,3 +1,4 @@
+import { validTimezone, timezoneOffset } from "../shared/local-time.mjs";
 const isNumber = value => typeof value === "number" && Number.isFinite(value);
 export function weatherTheme(code, isDay = true) {
   if ([95, 96, 99].includes(code)) return { theme: "storm", label: "雷暴" };
@@ -14,9 +15,9 @@ export function weatherTheme(code, isDay = true) {
 export function createWeatherService({ fetchImpl = fetch, now = () => Date.now() } = {}) {
   const cache = new Map(), pending = new Map();
   return async function getWeather(place) {
-    const date = new Date(now()).toLocaleDateString("en-CA", { timeZone: "Asia/Shanghai" });
     const cached = cache.get(place.id);
-    if (cached && cached.date === date && now() - cached.at < 15 * 60 * 1000) return cached.value;
+    const localDate = offset => new Date(now() + offset * 1000).toISOString().slice(0, 10);
+    if (cached && cached.date === localDate(timezoneOffset(cached.value.timezone, now()) ?? cached.value.utcOffsetSeconds) && now() - cached.at < 15 * 60 * 1000) return cached.value;
     if (pending.has(place.id)) return pending.get(place.id);
     const request = (async () => {
       const url = new URL("https://api.open-meteo.com/v1/forecast");
@@ -24,13 +25,19 @@ export function createWeatherService({ fetchImpl = fetch, now = () => Date.now()
         latitude: place.coordinates[1], longitude: place.coordinates[0],
         current: "temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m",
         daily: "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
-        timezone: "Asia/Shanghai", forecast_days: "1",
+        timezone: "auto", forecast_days: "1",
       }).toString();
       try {
         const response = await fetchImpl(url.toString(), { signal: AbortSignal.timeout(12000), redirect: "error" });
         if (!response.ok) throw Error("weather upstream");
         const data = await response.json(), c = data.current, d = data.daily;
-        const at = Date.parse(`${c?.time}+08:00`);
+        // Open-Meteo returns local wall-clock timestamps with the location's UTC offset.
+        // Resolve IANA offsets at the current instant, including DST; never assume China time abroad.
+        const timezone = validTimezone(data.timezone) || validTimezone(place.timezone) || (place.countryId === "CHN" || !place.countryId ? "Asia/Shanghai" : null);
+        const utcOffsetSeconds = timezone ? timezoneOffset(timezone, now()) : data.utc_offset_seconds;
+        if (!isNumber(utcOffsetSeconds) || Math.abs(utcOffsetSeconds) > 14 * 3600) throw Error("missing destination timezone");
+        const date = localDate(utcOffsetSeconds);
+        const at = Date.parse(`${c?.time}Z`) - utcOffsetSeconds * 1000;
         if (!isNumber(c?.temperature_2m) || !Number.isInteger(c.weather_code) ||
             ![0, 1].includes(c.is_day) || !Number.isFinite(at) ||
             Math.abs(now() - at) > 2 * 60 * 60 * 1000 || c.time.slice(0, 10) !== date || d?.time?.[0] !== date)
@@ -38,6 +45,7 @@ export function createWeatherService({ fetchImpl = fetch, now = () => Date.now()
         const optional = value => isNumber(value) ? value : null;
         const value = {
           ...weatherTheme(c.weather_code, !!c.is_day), date, observedAt: c.time,
+          timezone, utcOffsetSeconds,
           fetchedAt: new Date(now()).toISOString(), temperature: c.temperature_2m,
           feelsLike: optional(c.apparent_temperature), humidity: optional(c.relative_humidity_2m),
           wind: optional(c.wind_speed_10m), high: optional(d.temperature_2m_max?.[0]),

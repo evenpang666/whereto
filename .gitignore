@@ -53,6 +53,9 @@ id_ed25519
 !/output/playwright/mobile-detail.png
 !/output/playwright/mobile.png
 !/output/playwright/roam-desktop.png
+!/output/playwright/roam-world-desktop.png
+!/output/playwright/roam-world-country.png
+!/output/playwright/roam-world-mobile.png
 !/output/playwright/roam-mobile-home.png
 !/output/playwright/roam-mobile-import.png
 !/output/playwright/roam-mobile-visited.png

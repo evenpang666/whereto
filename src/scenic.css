@@ -86,3 +86,11 @@
 @media (prefers-reduced-motion: reduce) {
   .weather-scene *, .scenic-card .detail-content { animation: none !important; transition: none !important; }
 }
+.destination-time { padding: 13px 16px; margin-bottom: 10px; border: 1px solid #d9dfd0; border-radius: 12px; background: #fffdf7b3; color: var(--weather-ink); display: grid; gap: 7px; font-size: 12px; }
+.destination-time > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.destination-time span { font-size: 10px; opacity: .75; }
+.destination-time time { font-variant-numeric: tabular-nums; }
+.destination-time > div:nth-child(2) time { font-size: 21px; letter-spacing: 1px; }
+.destination-time small { font-size: 10px; overflow-wrap: anywhere; line-height: 1.6; }
+.scenic-card .photo-attribution { color: #7e796a; font-size: 10px; line-height: 1.8; overflow-wrap: anywhere; margin: 9px 0; }
+.photo-attribution a { text-decoration: underline; text-underline-offset: 2px; }
