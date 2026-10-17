@@ -4,6 +4,15 @@
 .visited-entry { display: flex; gap: 10px; align-items: center; width: 100%; padding: 11px 13px; margin: 0 0 19px; background: #eeeee4; color: #727b64; border: 1px solid #dfe2d4; border-radius: 12px; font-size: 12px; transition: background .25s, transform .25s; }
 .visited-entry span { flex: 1; text-align: left; }
 .visited-entry:hover { background: #e3e7da; transform: translateY(-2px); }
+.random-result { margin: -4px 0 14px; color: #657a51; font-size: 12px; line-height: 1.7; }
+.selected-landmark { color: #657a51; cursor: default; }
+.selected-landmark.animate-position { transition: transform .85s var(--ease); }
+.selected-landmark-icon { animation: landmark-reveal .4s var(--ease) both; }
+.selected-landmark-halo { fill: #dce5caa6; stroke: #fffdf3; stroke-width: 1.5; }
+.selected-landmark-icon > svg { stroke: #fffdf3; filter: drop-shadow(0 3px 3px #42573230); }
+.selected-landmark-label rect { fill: #fffdf3; stroke: #a8b694; stroke-width: 1; }
+.selected-landmark-label text { fill: #4e6243; font-size: 12px; font-weight: 600; }
+@keyframes landmark-reveal { from { transform: scale(.55); opacity: .3; } to { transform: scale(1); opacity: 1; } }
 .marked-point { color: #b57960; cursor: pointer; transition: transform .65s cubic-bezier(.22,.68,.23,1), color .3s; }
 .marked-point .record-halo { fill: #fffaf1; stroke: currentColor; stroke-width: 1.2; }
 .marked-point:hover .record-halo, .marked-point:focus .record-halo { stroke-width: 3; }

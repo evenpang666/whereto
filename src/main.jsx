@@ -42,6 +42,7 @@ import "./polish.css";
 import "./features.css";
 import "./world.css";
 import { WorldMap } from "./WorldMap.jsx";
+import { SelectedLandmark } from "./SelectedLandmark.jsx";
 import { normalizeMap } from "./geography.js";
 import { mergeCatalogs, scopedPlaces, searchCatalog, placeLocation } from "../shared/catalog.mjs";
 
@@ -149,6 +150,7 @@ function TravelMap({
   onCity,
   onPlace,
   selected,
+  highlightedPlace,
   filter,
   randomizing,
   favorites,
@@ -375,7 +377,7 @@ function TravelMap({
                 </g>
               );
             })}
-          {markers.filter(p => !favorites.includes(p.id) && !visited.includes(p.id)).map((p) => {
+          {markers.filter(p => p.id !== highlightedPlace?.id && !favorites.includes(p.id) && !visited.includes(p.id)).map((p) => {
             const pt = projection(p.coordinates);
             return (
               <g
@@ -405,7 +407,7 @@ function TravelMap({
         <g className="map-records" aria-label="收藏与去过的景点">
           {(() => {
             const occupied = [];
-            return catalog.places.filter(p => favorites.includes(p.id) || visited.includes(p.id)).map(p => {
+            return catalog.places.filter(p => p.id !== highlightedPlace?.id && (favorites.includes(p.id) || visited.includes(p.id))).map(p => {
               const pt = projection(p.coordinates);
               const sx = x + k * pt[0], sy = y + k * pt[1];
               const outside = sx < 28 || sx > 912 || sy < 30 || sy > 570;
@@ -436,6 +438,10 @@ function TravelMap({
             });
           })()}
         </g>
+        {highlightedPlace && (() => {
+          const pt = projection(highlightedPlace.coordinates);
+          return pt && <SelectedLandmark place={highlightedPlace} point={[x + k * pt[0], y + k * pt[1]]} animatePosition />;
+        })()}
       </svg>
       <div className="map-compass">
         <span>N</span>
@@ -709,7 +715,6 @@ function App() {
   const catalog = useMemo(() => mergeCatalogs(chinaCatalog, worldData, nation), [chinaCatalog, worldData, nation]);
   const chinaScope = useMemo(() => catalog && ({ ...catalog, cities: catalog.cities.filter(c => c.countryId === "CHN"), places: catalog.places.filter(p => p.countryId === "CHN") }), [catalog]);
   useEffect(() => { try { localStorage.setItem("whereto-map-mode", mode); } catch {} }, [mode]);
-  useEffect(() => { clearTimeout(rollingTimer.current); setRolling(false); }, [mode, country?.id, region?.id, province?.properties.adcode, city?.id]);
   const [filter, setFilter] = useState("全部风景"),
     [search, setSearch] = useState(""),
     [activeSearch, setActiveSearch] = useState(false),
@@ -723,6 +728,7 @@ function App() {
     [detailLoading, setDetailLoading] = useState(false),
     [generating, setGenerating] = useState(false),
     [rolling, setRolling] = useState(false),
+    [randomPlace, setRandomPlace] = useState(null),
     [toast, setToast] = useState(null),
     [error, setError] = useState(null),
     [busyIds, setBusyIds] = useState(new Set());
@@ -799,8 +805,14 @@ function App() {
     return () => controller.abort();
   }, [mode, country?.id, nation, mapRetry]);
   const places = useMemo(() => scopedPlaces(catalog, { mode, province, country, region, city, filter }), [catalog, mode, province, country, region, city, filter]);
+  useEffect(() => {
+    clearTimeout(rollingTimer.current);
+    setRolling(false);
+    setRandomPlace(previous => places.some(p => p.id === previous?.id) ? previous : null);
+  }, [places, mode]);
   const searchResults = useMemo(() => searchCatalog(catalog, search, mode), [catalog, search, mode]);
-  const featured = useMemo(() => (mode === "china" ? places.find(p => p.name === "西湖风景名胜区") : places.find(p => p.kind === "landmark")) || places[0], [places, mode]);
+  const highlightedPlace = places.find(p => p.id === randomPlace?.id);
+  const featured = useMemo(() => highlightedPlace || (mode === "china" ? places.find(p => p.name === "西湖风景名胜区") : places.find(p => p.kind === "landmark")) || places[0], [places, mode, highlightedPlace]);
   const selectProvince = p => { setProvince(p); setCity(null); };
   const selectCountry = c => { setCountry(c); setRegion(null); setCity(null); };
   const selectRegion = r => { setRegion(r); setCity(null); };
@@ -808,6 +820,7 @@ function App() {
   const switchMode = next => {
     if (mode === next) return;
     ++reqId.current; setSelected(null); setDetail(null); setDetailLoading(false);
+    setRandomPlace(null);
     setMode(next); resetScope(); setSearch(""); setActiveSearch(false); setFilter("全部风景");
   };
   const focusCity = c => {
@@ -920,7 +933,7 @@ function App() {
       const cityId = pick(groups);
       const p = pick(places.filter((p) => p.cityId === cityId));
       setRolling(false);
-      openPlace(p, true);
+      setRandomPlace(p);
     }, 700);
   };
   const closeDetail = () => {
@@ -1149,6 +1162,7 @@ function App() {
             </div>}
             {mode === "world" ? <WorldMap world={worldMap} countryMap={countryBoundary && countryBoundary.id === country?.id ? countryBoundary.data : null}
               catalog={catalog} country={country} region={region} city={city} places={places}
+              highlightedPlace={highlightedPlace}
               onCountry={selectCountry} onRegion={selectRegion} onCity={focusCity} onPlace={openPlace}
               favorites={state.favorites} visited={state.visited} randomizing={rolling}
               loading={worldMapLoading} error={worldMapError} onRetry={() => setMapRetry(v => v + 1)} /> : <TravelMap
@@ -1161,6 +1175,7 @@ function App() {
               onCity={setCity}
               onPlace={(p) => openPlace(p)}
               selected={featured}
+              highlightedPlace={highlightedPlace}
               filter={filter}
               randomizing={rolling}
               favorites={state.favorites}
@@ -1192,6 +1207,7 @@ function App() {
               {city ? city.name : mode === "world" ? region?.name || country?.name || "世界范围" : province ? short(province.properties.name) : "中国境内"}
               随机探索 · 免费 · AI 解读按需生成
             </p>
+            {highlightedPlace && <p className="random-result" role="status">已选中{highlightedPlace.name}，点击下方卡片查看详情。</p>}
             <button className="visited-entry" onClick={() => setPanel("visited")}>
               <CheckCheck size={16} /><span>{matching ? "正在整理去过的风景…" : "标记去过的风景"}</span><ArrowUpRight size={15} />
             </button>
@@ -1199,7 +1215,7 @@ function App() {
               <article className={`feature-card ${state.visited.includes(featured.id) ? "is-visited" : ""}`}>
                 <button
                   className="feature-image"
-                  onClick={() => openPlace(featured)}
+                  onClick={() => openPlace(featured, true)}
                 >
                   <PlaceImage place={featured} />
                   <span className="image-tag">{featured.category}</span>
@@ -1228,7 +1244,7 @@ function App() {
                     </button>
                   </div>
                   <h3>
-                    <button onClick={() => openPlace(featured)}>
+                    <button onClick={() => openPlace(featured, true)}>
                       {featured.name.replace(/风景名胜区|风景区|景区$/g, "")}
                     </button>
                   </h3>
@@ -1236,7 +1252,7 @@ function App() {
                   {state.visited.includes(featured.id) && <span className="visited-badge"><CheckCheck size={12} /> 已去过</span>}
                   <button
                     className="text-link"
-                    onClick={() => openPlace(featured)}
+                    onClick={() => openPlace(featured, true)}
                   >
                     走近这处风景 <ArrowRight size={15} />
                   </button>

@@ -14,6 +14,10 @@
 .world-map .city-region { cursor: pointer; }
 .world-map .city-region:hover { fill: #b8c4a1; }
 .world-map .city-selected { fill: #a4b58c; }
+.world-map [data-interactive]:focus { outline: none; }
+.world-map path[data-interactive]:focus-visible { stroke: #657a51; stroke-width: 2.5; }
+.world-map g[data-interactive]:focus-visible circle { stroke: #657a51; stroke-width: 3; }
+.world-map .marked-point { transition: color .3s; }
 .world-coverage { color: #878574; font-size: 12px; line-height: 1.8; margin: 10px 0 18px; }
 .world-empty { padding: 20px 0; color: #7c806b; font-size: 13px; }
 .region-chips { max-height: 240px; overflow: auto; padding: 4px 2px; }
